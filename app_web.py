@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request, send_file
 from woo_api import obtener_productos_woo, obtener_categorias_woo
-from leer_claves import obtener_credenciales
 
 app = Flask(
     __name__,
@@ -14,27 +13,39 @@ app = Flask(
 )
 
 def _build_marcas():
-    marcas = {}
-    for key, nombre, color, acento in [
-        ('xtrong', 'XTRONG', '#005654', '#B6FF00'),
-        ('xecuro', 'XECURO', '#303830', '#FFAD40'),
-    ]:
-        url, ck, cs = obtener_credenciales(key)
-        marcas[key] = {
-            'url':    url,
-            'ck':     ck,
-            'cs':     cs,
-            'nombre': nombre,
-            'color':  color,
-            'acento': acento,
-        }
-    return marcas
+    # Leer desde archivo como base
+    try:
+        from leer_claves import obtener_credenciales
+        url_xt, ck_xt, cs_xt = obtener_credenciales('xtrong')
+        url_xe, ck_xe, cs_xe = obtener_credenciales('xecuro')
+    except Exception:
+        url_xt = 'https://xtronghelmets.com'
+        url_xe = 'https://xecurohelmets.com'
+        ck_xt = cs_xt = ck_xe = cs_xe = ''
+
+    # Variables de entorno tienen prioridad sobre el archivo
+    return {
+        'xtrong': {
+            'url':    url_xt,
+            'ck':     os.environ.get('XTRONG_CK', ck_xt),
+            'cs':     os.environ.get('XTRONG_CS', cs_xt),
+            'nombre': 'XTRONG',
+            'color':  '#005654',
+            'acento': '#B6FF00',
+        },
+        'xecuro': {
+            'url':    url_xe,
+            'ck':     os.environ.get('XECURO_CK', ck_xe),
+            'cs':     os.environ.get('XECURO_CS', cs_xe),
+            'nombre': 'XECURO',
+            'color':  '#303830',
+            'acento': '#FFAD40',
+        },
+    }
 
 MARCAS = _build_marcas()
 
 # ── Helpers de estado en /tmp ─────────────────────────────────────────────
-# En Vercel no hay memoria compartida entre invocaciones, usamos archivos en /tmp.
-
 TMP = '/tmp/catalogo_jobs'
 
 def _job_path(job_id):
@@ -123,7 +134,6 @@ def descargar(job_id):
     ruta = j.get('ruta_pdf')
     if not ruta or not os.path.exists(ruta):
         return jsonify({'error': 'PDF no disponible'}), 404
-
     nombre = os.path.basename(ruta)
     return send_file(
         ruta,
@@ -136,12 +146,10 @@ def descargar(job_id):
 # ── Worker de generación ──────────────────────────────────────────────────
 
 def _ejecutar_generacion(job_id, marca_key, data):
-
     logs_acum = []
 
     def log(msg):
         logs_acum.append(msg)
-        # Persistir cada log inmediatamente para que el polling lo vea
         j = _read_job(job_id) or {}
         j['logs'] = logs_acum[:]
         _write_job(job_id, j)
@@ -177,9 +185,8 @@ def _ejecutar_generacion(job_id, marca_key, data):
         log(f"✅ {len(productos)} productos listos para generar")
         progreso(65)
 
-        # Rutas en /tmp (único sistema de archivos escribible en Vercel)
         carpeta_cache  = f'/tmp/cache_imagenes/{marca_key}'
-        carpeta_assets = os.path.join(os.path.dirname(__file__), '..', 'assets', marca_key)
+        carpeta_assets = os.path.join(os.path.dirname(__file__), 'assets', marca_key)
         os.makedirs(carpeta_cache, exist_ok=True)
 
         ahora        = datetime.now()
