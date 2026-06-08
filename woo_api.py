@@ -70,31 +70,33 @@ def obtener_productos_woo(
                 if f.lower() in c['name'].lower():
                     cat_ids.append(c['id'])
 
-    # 2. Descargar productos paginados
+    # 2. Descargar productos paginados (una llamada por tipo para evitar error 400)
     log("📦 Descargando productos desde WooCommerce...")
     productos_raw = []
-    page = 1
-    params_base = {
-        'per_page': 100,
-        'status': 'publish',
-        'type': 'variable,simple',
-    }
-    if solo_stock:
-        params_base['stock_status'] = 'instock'
-    if cat_ids:
-        params_base['category'] = ','.join(str(i) for i in cat_ids)
 
-    while True:
-        params = {**params_base, 'page': page}
-        batch = _api_get(base_url, ck, cs, 'products', params)
-        if not batch:
-            break
-        productos_raw.extend(batch)
-        log(f"  Página {page}: {len(batch)} productos ({len(productos_raw)} total)")
-        prog(int(30 * page / max(page + 1, 2)))
-        if len(batch) < 100:
-            break
-        page += 1
+    for tipo in ('variable', 'simple'):
+        page = 1
+        params_base = {
+            'per_page': 100,
+            'status':   'publish',
+            'type':     tipo,
+        }
+        if solo_stock:
+            params_base['stock_status'] = 'instock'
+        if cat_ids:
+            params_base['category'] = ','.join(str(i) for i in cat_ids)
+
+        while True:
+            params = {**params_base, 'page': page}
+            batch = _api_get(base_url, ck, cs, 'products', params)
+            if not batch:
+                break
+            productos_raw.extend(batch)
+            log(f"  [{tipo}] Página {page}: {len(batch)} productos ({len(productos_raw)} total)")
+            prog(int(30 * page / max(page + 1, 2)))
+            if len(batch) < 100:
+                break
+            page += 1
 
     log(f"📦 {len(productos_raw)} productos descargados, procesando variaciones...")
 
