@@ -1,0 +1,10 @@
+https://xtronghelmets.com/
+
+	clave del cliente: ck_188b0143073d7c0ba9c7a8c8dc992c63b3e8e729
+	clave secreta del cliente: cs_211c60d8a986de2a325a724a8639d63a7a6cc565
+
+
+https://xecurohelmets.com/
+
+	clave del cliente: ck_55ad8fee234f3f3b081c640842f93a8725b01898
+	clave secreta del cliente: cs_3d38ae6a35a3b11bf0247422f2d4c8fad64a609e
