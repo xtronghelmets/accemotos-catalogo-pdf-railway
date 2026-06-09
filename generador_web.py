@@ -38,8 +38,10 @@ MARCAS_CONFIG = {
     'xecuro': {
         'color_principal': '#303830',
         'color_acento':    '#FFAD40',
+        'color_secundario':'#515949',
+        'color_beige':     '#E5E0D8',
         'color_texto':     '#000000',
-        'color_precio':    '#444444',
+        'color_precio':    '#515949',
         'font_titulo':     'Helvetica-Bold',
         'font_cuerpo':     'Helvetica',
         'font_italic':     'Helvetica-BoldOblique',
@@ -49,24 +51,57 @@ MARCAS_CONFIG = {
 
 # Portadas y contraportadas por tipo de catálogo
 ASSETS_POR_TIPO = {
+    # XTRONG — nombres exactos de archivos en assets/xtrong/
     'abatibles_abiertos': {
-        'portada':      'PORTADA_ABATIBLESABIERTOS.png',
-        'contraportada':'CONTRAPORTADA_ABATIBLESABIERTOS.png',
+        'portada':       'PORTADA_ABATIBLESABIERTOS.png',
+        'contraportada': 'CONTRAPORTADA_ABATIBLESABIERTOS.png',
+        'pagina_bg':     None,
+        'pagina_bg_pro': None,
     },
     'integrales': {
-        'portada':      'PORTADA_INTEGRALES.png',
-        'contraportada':'CONTRA_PORTADA_INTEGRALES.png',
+        'portada':       'PORTADA_INTEGRALES.png',
+        'contraportada': 'CONTRA_PORTADA_INTEGRALES.png',
+        'pagina_bg':     None,
+        'pagina_bg_pro': None,
     },
     'textiles_accesorios': {
-        'portada':      'PORTADA_TEXTILES_Y_ACCESORIOS.png',
-        'contraportada':'CONTRA_PORTADA_TEXTILES_Y_ACCESORIOS.png',
+        'portada':       'PORTADA_TEXTILES_Y_ACCESORIOS.png',
+        'contraportada': 'CONTRA_PORTADA_TEXTILES_Y_ACCESORIOS.png',
+        'pagina_bg':     None,
+        'pagina_bg_pro': None,
+    },
+    # XECURO — nombres exactos de archivos en assets/xecuro/
+    'cascos': {
+        'portada':       'PORTADA_XECURO.png',
+        'contraportada': 'CONTRAPORTADA_XECURO.png',
+        'pagina_bg':     'PÁGINA_XECURO.png',
+        'pagina_bg_pro': 'PÁGINA_XECURO_PRO.png',
+    },
+    'impermeables': {
+        'portada':       'PORTADA_XECURO.png',
+        'contraportada': 'CONTRAPORTADA_XECURO.png',
+        'pagina_bg':     'PÁGINA_XECURO.png',
+        'pagina_bg_pro': 'PÁGINA_XECURO_PRO.png',
+    },
+    'intercomunicadores': {
+        'portada':       'PORTADA_XECURO.png',
+        'contraportada': 'CONTRAPORTADA_XECURO.png',
+        'pagina_bg':     'PÁGINA_XECURO.png',
+        'pagina_bg_pro': 'PÁGINA_XECURO_PRO.png',
     },
 }
 
 # Logos de certificación
+# Assets de certificación por marca (nombres exactos de archivo)
 CERT_ASSETS = {
-    'dot_ece': 'CERTIFICACIÓN_DOTECE.png',
-    'dot':     'CERTIFICACIÓN_DOT.png',
+    'xtrong': {
+        'dot_ece': 'CERTIFICACIÓN_DOTECE.png',
+        'dot':     'CERTIFICACIÓN_DOT.png',
+    },
+    'xecuro': {
+        'dot_ece': 'ÍCONO_DOT.png',
+        'dot':     'ÍCONO_DOT.png',
+    },
 }
 
 PAGE_W, PAGE_H = 595, 1060
@@ -193,8 +228,10 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     if not tiene_dot and not tiene_ece:
         return
 
+    marca = cfg.get('_marca', 'xtrong')
+    cert_map = CERT_ASSETS.get(marca, CERT_ASSETS['xtrong'])
     key = 'dot_ece' if (tiene_dot and tiene_ece) else 'dot'
-    fname = CERT_ASSETS.get(key, '')
+    fname = cert_map.get(key, '')
     cert_path = os.path.join(carpeta_assets, fname)
 
     # Posición: esquina derecha, justo bajo el header
@@ -370,10 +407,33 @@ def _draw_full_bleed(c, img_path, texto_overlay=None, cfg=None):
 
 # ── Página de producto ────────────────────────────────────────────────────────
 
-def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total, carpeta_assets):
-    # Fondo blanco
-    c.setFillColor(white)
-    c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+def _es_pro(producto):
+    """Detecta si un producto es de línea PRO por nombre o descripción."""
+    texto = (producto.get('nombre','') + ' ' +
+             producto.get('desc_corta','') + ' ' +
+             producto.get('descripcion','')).lower()
+    return bool(re.search(r'xecuro[\s\-]?pro', texto))
+
+
+def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
+                     carpeta_assets, assets_tipo=None):
+    # Fondo: imagen de plantilla para Xecuro, blanco para Xtrong
+    pagina_bg = None
+    if assets_tipo:
+        if _es_pro(producto) and assets_tipo.get('pagina_bg_pro'):
+            pagina_bg = os.path.join(carpeta_assets, assets_tipo['pagina_bg_pro'])
+        elif assets_tipo.get('pagina_bg'):
+            pagina_bg = os.path.join(carpeta_assets, assets_tipo['pagina_bg'])
+
+    if pagina_bg and os.path.exists(pagina_bg):
+        try:
+            c.drawImage(pagina_bg, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
+        except Exception:
+            c.setFillColor(white)
+            c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+    else:
+        c.setFillColor(white)
+        c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
 
     logo_path = cfg.get('_logo_path')
     _draw_header(c, cfg, producto['categoria'], logo_path=logo_path)
@@ -414,7 +474,7 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total, ca
     y_cur = TABLE_TOP
     for color, vars_color in grupos_color.items():
         tallas_data = [
-            (v.get('talla', '') or '-',
+            (v.get('talla', '') or 'ÚNICA',
              v.get('sku', '') or '-',
              v.get('inventario', None))
             for v in vars_color
@@ -450,6 +510,7 @@ def generar_pdf_desde_productos(
         if callback_progreso: callback_progreso(p)
 
     cfg = dict(MARCAS_CONFIG.get(marca, MARCAS_CONFIG['xtrong']))
+    cfg['_marca'] = marca
 
     # Registrar fuentes TTF
     for font_name, font_file in [('Kanit', 'Kanit-Bold.ttf'), ('Sora', 'Sora-Regular.ttf')]:
@@ -475,9 +536,9 @@ def generar_pdf_desde_productos(
     cfg['_logo_path'] = logo_path
 
     # Portada y contraportada según tipo
-    assets_tipo = ASSETS_POR_TIPO.get(tipo_catalogo, {})
-    portada_fname  = assets_tipo.get('portada', 'PORTADA.jpg')
-    contra_fname   = assets_tipo.get('contraportada', 'CONTRAPORTADA.jpg')
+    assets_tipo_dict = ASSETS_POR_TIPO.get(tipo_catalogo, {})
+    portada_fname  = assets_tipo_dict.get('portada', 'PORTADA.jpg')
+    contra_fname   = assets_tipo_dict.get('contraportada', 'CONTRAPORTADA.jpg')
     portada_path   = os.path.join(carpeta_assets, portada_fname)
     contra_path    = os.path.join(carpeta_assets, contra_fname)
     # Fallback extensiones
@@ -487,6 +548,7 @@ def generar_pdf_desde_productos(
         if not os.path.exists(contra_path):
             contra_path  = os.path.join(carpeta_assets, contra_fname.rsplit('.', 1)[0] + ext)
 
+    assets_tipo = assets_tipo_dict
     log(f"  📄 Portada: {portada_fname}")
     log(f"  📄 Contraportada: {contra_fname}")
 
@@ -544,7 +606,7 @@ def generar_pdf_desde_productos(
         img_path = img_list[0] if img_list else None
         log(f"  📝 [{i+1}/{total}] {prod['nombre'][:45]}")
         _pagina_producto(c, cfg, prod, img_path, mostrar_precios,
-                         i + 1, total, carpeta_assets)
+                         i + 1, total, carpeta_assets, assets_tipo=assets_tipo)
         c.showPage()
 
     # Contraportada
