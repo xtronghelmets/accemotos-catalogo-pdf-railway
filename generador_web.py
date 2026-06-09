@@ -51,58 +51,58 @@ MARCAS_CONFIG = {
 
 # Portadas y contraportadas por tipo de catálogo
 ASSETS_POR_TIPO = {
-    # XTRONG — nombres exactos de archivos en assets/xtrong/
+    # XTRONG — nombres exactos como están en assets/xtrong/
     'abatibles_abiertos': {
-        'portada':       'PORTADA_ABATIBLESABIERTOS.png',
-        'contraportada': 'CONTRAPORTADA_ABATIBLESABIERTOS.png',
-        'pagina_bg':     None,
+        'portada':       'PORTADA ABATIBLES-ABIERTOS.png',
+        'contraportada': 'CONTRAPORTADA ABATIBLES-ABIERTOS.png',
+        'pagina_bg':     'PLANTILLA HOJA.png',
         'pagina_bg_pro': None,
     },
     'integrales': {
-        'portada':       'PORTADA_INTEGRALES.png',
-        'contraportada': 'CONTRA_PORTADA_INTEGRALES.png',
-        'pagina_bg':     None,
+        'portada':       'PORTADA INTEGRALES.png',
+        'contraportada': 'CONTRA PORTADA INTEGRALES.png',
+        'pagina_bg':     'PLANTILLA HOJA.png',
         'pagina_bg_pro': None,
     },
     'textiles_accesorios': {
-        'portada':       'PORTADA_TEXTILES_Y_ACCESORIOS.png',
-        'contraportada': 'CONTRA_PORTADA_TEXTILES_Y_ACCESORIOS.png',
-        'pagina_bg':     None,
+        'portada':       'PORTADA TEXTILES Y ACCESORIOS.png',
+        'contraportada': 'CONTRA PORTADA TEXTILES Y ACCESORIOS.png',
+        'pagina_bg':     'PLANTILLA HOJA.png',
         'pagina_bg_pro': None,
     },
-    # XECURO — nombres exactos de archivos en assets/xecuro/
+    # XECURO — nombres exactos como están en assets/xecuro/
     'cascos': {
-        'portada':       'PORTADA_XECURO.png',
-        'contraportada': 'CONTRAPORTADA_XECURO.png',
-        'pagina_bg':     'PÁGINA_XECURO.png',
-        'pagina_bg_pro': 'PÁGINA_XECURO_PRO.png',
+        'portada':       'PORTADA XECURO.png',
+        'contraportada': 'CONTRAPORTADA XECURO.png',
+        'pagina_bg':     'PÁGINA XECURO.png',
+        'pagina_bg_pro': 'PÁGINA XECURO PRO.png',
     },
     'impermeables': {
-        'portada':       'PORTADA_XECURO.png',
-        'contraportada': 'CONTRAPORTADA_XECURO.png',
-        'pagina_bg':     'PÁGINA_XECURO.png',
-        'pagina_bg_pro': 'PÁGINA_XECURO_PRO.png',
+        'portada':       'PORTADA XECURO.png',
+        'contraportada': 'CONTRAPORTADA XECURO.png',
+        'pagina_bg':     'PÁGINA XECURO.png',
+        'pagina_bg_pro': 'PÁGINA XECURO PRO.png',
     },
     'intercomunicadores': {
-        'portada':       'PORTADA_XECURO.png',
-        'contraportada': 'CONTRAPORTADA_XECURO.png',
-        'pagina_bg':     'PÁGINA_XECURO.png',
-        'pagina_bg_pro': 'PÁGINA_XECURO_PRO.png',
+        'portada':       'PORTADA XECURO.png',
+        'contraportada': 'CONTRAPORTADA XECURO.png',
+        'pagina_bg':     'PÁGINA XECURO.png',
+        'pagina_bg_pro': 'PÁGINA XECURO PRO.png',
     },
 }
 
 # Logos de certificación
-# Assets de certificación — se prueban múltiples nombres posibles
+# Assets de certificación — nombres exactos del repo
 CERT_ASSETS = {
     'xtrong': {
-        'dot_ece': ['CERTIFICACIÓN_DOTECE.png', 'CERTIFICACIÓN DOT-ECE.png',
-                    'CERTIFICACION_DOTECE.png', 'CERTIFICACION DOT-ECE.png'],
-        'dot':     ['CERTIFICACIÓN_DOT.png', 'CERTIFICACIÓN DOT.png',
-                    'CERTIFICACION_DOT.png', 'CERTIFICACION DOT.png'],
+        'dot_ece': ['CERTIFICACIÓN DOT-ECE.png', 'CERTIFICACION DOT-ECE.png',
+                    'CERTIFICACIÓN_DOT-ECE.png', 'CERTIFICACIÓN_DOTECE.png'],
+        'dot':     ['CERTIFICACIÓN DOT.png', 'CERTIFICACION DOT.png',
+                    'CERTIFICACIÓN_DOT.png'],
     },
     'xecuro': {
-        'dot_ece': ['ÍCONO_DOT.png', 'ICONO_DOT.png', 'ÍCONO DOT.png'],
-        'dot':     ['ÍCONO_DOT.png', 'ICONO_DOT.png', 'ÍCONO DOT.png'],
+        'dot_ece': ['ÍCONO DOT.png', 'ICONO DOT.png', 'ÍCONO_DOT.png'],
+        'dot':     ['ÍCONO DOT.png', 'ICONO DOT.png', 'ÍCONO_DOT.png'],
     },
 }
 
@@ -437,10 +437,11 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
     if pagina_bg and os.path.exists(pagina_bg):
         try:
             c.drawImage(pagina_bg, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
-        except Exception:
+        except Exception as _e:
             c.setFillColor(white)
             c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
     else:
+        # Fondo blanco por defecto
         c.setFillColor(white)
         c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
 
