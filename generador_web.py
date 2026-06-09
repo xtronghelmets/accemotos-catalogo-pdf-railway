@@ -309,7 +309,8 @@ def _draw_imagen(c, img_path, x, y_top, w, h_max):
 def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None):
     """
     tallas_data: lista de (talla, codigo, inventario)
-    Filas: encabezado color (si aplica) + TALLA / CÓDIGO / INVENTARIO
+    Filas: encabezado color (circulo+nombre) + TALLA / CÓDIGO / INVENTARIO
+    Sin fila COLOR — el color se muestra solo en el encabezado verde
     """
     n = max(len(tallas_data), 1)
     COL_W   = min(68, (PAGE_W - 40) / (n + 1))
@@ -317,12 +318,11 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
     x0      = (PAGE_W - tabla_w) / 2
     y_cur   = y_top
 
-    # Encabezado de color
+    # Encabezado de color (solo circulo + nombre, fondo verde)
     if color_nombre:
         y_cur -= TABLA_COLOR_H
         c.setFillColor(_hx(cfg['color_principal']))
         c.roundRect(x0, y_cur, tabla_w, TABLA_COLOR_H, 4, fill=1, stroke=0)
-        # Círculo de color
         if color_hex_str:
             try:
                 c.setFillColor(HexColor(color_hex_str))
@@ -454,7 +454,7 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
     _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets)
 
     # Nombre + descripción
-    precio = producto.get('precio', 0) if mostrar_precios else 0
+    precio = 0  # No mostrar precio en el catálogo
     desc_corta = producto.get('desc_corta', '') or producto.get('descripcion', '') or ''
     y_nombre_bottom = _draw_nombre_zona(
         c, cfg, producto['nombre'],
@@ -482,12 +482,21 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
 
     y_cur = TABLE_TOP
     for color, vars_color in grupos_color.items():
-        tallas_data = [
-            (v.get('talla', '') or 'ÚNICA',
-             v.get('sku', '') or '-',
-             v.get('inventario', None))
-            for v in vars_color
-        ]
+        tallas_data = []
+        for v in vars_color:
+            talla = v.get('talla', '') or ''
+            if not talla:
+                # Intentar extraer talla del nombre del producto o descripción
+                import re as _re
+                texto_buscar = (v.get('nombre', '') + ' ' +
+                               producto.get('desc_corta', '')).upper()
+                # Buscar patrones de talla: XS, S, M, L, XL, 2XL, 3XL
+                m = _re.search(r'\b(3XL|2XL|XXL|XL|XS|[SML])\b', texto_buscar)
+                if m:
+                    talla = m.group(1)
+                else:
+                    talla = 'ÚNICA'
+            tallas_data.append((talla, v.get('sku', '') or '-', v.get('inventario', None)))
         color_label   = color if color != 'default' else ''
         color_hex_str = color_hex(color) if color not in ('default', '') else None
         _draw_tabla(c, cfg, y_cur, tallas_data,
@@ -574,26 +583,30 @@ def generar_pdf_desde_productos(
     contra_fname   = assets_tipo_dict.get('contraportada', 'CONTRAPORTADA.jpg')
 
     def _buscar_asset(carpeta, fname):
-        """Busca un asset probando nombre exacto, con espacios y diferentes extensiones."""
-        candidatos = [fname]
-        # Versión con espacios (guion bajo → espacio)
-        candidatos.append(fname.replace('_', ' '))
-        # Versión sin tildes
+        """Busca asset probando guion bajo, espacios, sin tildes, distintas extensiones."""
         import unicodedata
-        sin_tildes = ''.join(c for c in unicodedata.normalize('NFD', fname)
-                             if unicodedata.category(c) != 'Mn')
-        candidatos.append(sin_tildes)
-        candidatos.append(sin_tildes.replace('_', ' '))
-        # Probar con diferentes extensiones
-        base_fname = fname.rsplit('.', 1)[0]
-        for ext in ('.png', '.jpg', '.jpeg', '.PNG', '.JPG'):
-            candidatos.append(base_fname + ext)
-            candidatos.append(base_fname.replace('_', ' ') + ext)
+        def sin_tildes(s):
+            return ''.join(c for c in unicodedata.normalize('NFD', s)
+                          if unicodedata.category(c) != 'Mn')
+        base, ext_orig = fname.rsplit('.', 1) if '.' in fname else (fname, 'png')
+        candidatos = []
+        for base_v in [base, base.replace('_', ' '), sin_tildes(base), sin_tildes(base).replace('_', ' ')]:
+            for ext in [ext_orig, 'png', 'jpg', 'jpeg', 'PNG', 'JPG']:
+                candidatos.append(f"{base_v}.{ext}")
+        # También listar carpeta y buscar por similitud
+        if os.path.isdir(carpeta):
+            archivos = os.listdir(carpeta)
+            base_norm = sin_tildes(base.replace('_', '').replace(' ', '')).upper()
+            for archivo in archivos:
+                arch_norm = sin_tildes(archivo.replace('_', '').replace(' ', '')).upper()
+                arch_norm = arch_norm.rsplit('.', 1)[0] if '.' in arch_norm else arch_norm
+                if arch_norm == base_norm:
+                    candidatos.insert(0, archivo)
         for c in candidatos:
             path = os.path.join(carpeta, c)
             if os.path.exists(path):
                 return path
-        return os.path.join(carpeta, fname)  # fallback aunque no exista
+        return os.path.join(carpeta, fname)
 
     portada_path = _buscar_asset(carpeta_assets, portada_fname)
     contra_path  = _buscar_asset(carpeta_assets, contra_fname)
