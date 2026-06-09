@@ -30,7 +30,26 @@ const TIPOS_CATALOGO = {
                'Antiempañantes', 'Cobertores/Pijamas', 'Caña corta'],
     },
   ],
-  xecuro: null, // dinámico desde API
+  xecuro: [
+    {
+      key:    'cascos',
+      nombre: 'Cascos',
+      desc:   'Cascos integrales, abiertos y más',
+      cats:   ['Cascos', 'Integrales', 'Abiertos', 'Abatibles', 'Carretera', 'Multipropósito'],
+    },
+    {
+      key:    'impermeables',
+      nombre: 'Impermeables',
+      desc:   'Impermeables y ropa de lluvia',
+      cats:   ['Impermeables', 'IMPERMEABLES'],
+    },
+    {
+      key:    'intercomunicadores',
+      nombre: 'Intercomunicadores',
+      desc:   'Intercoms e intercomunicadores',
+      cats:   ['Intercomunicadores', 'INTERCOMS', 'Intercoms'],
+    },
+  ],
 };
 
 let marcaActual  = 'xtrong';
