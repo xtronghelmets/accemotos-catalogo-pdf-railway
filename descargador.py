@@ -4,9 +4,13 @@ from urllib.parse import urlparse
 from PIL import Image
 from io import BytesIO
 
+# Resolución máxima para imágenes de productos en PDF
+# 595pt de ancho × 72dpi × 2x = ~857px. 800px es suficiente y ahorra tiempo de I/O.
+MAX_PX = 800
+
 
 def _imagen_a_jpeg(img, cache_path):
-    """Convierte una imagen PIL a JPEG con fondo blanco y la guarda."""
+    """Convierte imagen PIL a JPEG optimizado: fondo blanco, max 800px, quality=82."""
     if img.mode in ('RGBA', 'LA', 'P'):
         if img.mode == 'P':
             img = img.convert('RGBA')
@@ -16,7 +20,16 @@ def _imagen_a_jpeg(img, cache_path):
         img = fondo
     else:
         img = img.convert('RGB')
-    img.save(cache_path, 'JPEG', quality=92)
+
+    # Reducir si supera MAX_PX en el lado mayor
+    w, h = img.size
+    if max(w, h) > MAX_PX:
+        if w >= h:
+            img = img.resize((MAX_PX, int(h * MAX_PX / w)), Image.LANCZOS)
+        else:
+            img = img.resize((int(w * MAX_PX / h), MAX_PX), Image.LANCZOS)
+
+    img.save(cache_path, 'JPEG', quality=82, optimize=True)
     return cache_path
 
 
@@ -51,7 +64,7 @@ def descargar_imagen(urls_str, sku, nombre, carpeta_cache, callback_log=None):
     urls = [u.strip() for u in str(urls_str).split(',')
             if u.strip() and u.strip().startswith('http')]
 
-    # 3. Buscar por nombre de archivo de la URL en cache (imágenes descargadas manualmente)
+    # 3. Buscar por nombre de archivo de la URL en cache
     for url in urls[:1]:
         url_fname = url.split('?')[0].rstrip('/').split('/')[-1]
         for ext in ('', '.jpg', '.jpeg', '.png', '.webp'):
@@ -67,7 +80,7 @@ def descargar_imagen(urls_str, sku, nombre, carpeta_cache, callback_log=None):
                 except Exception:
                     pass
 
-    # 4. Descargar desde URL (con Referer para evitar hotlink protection)
+    # 4. Descargar desde URL
     for url in urls:
         try:
             parsed = urlparse(url)

@@ -632,16 +632,50 @@ def generar_pdf_desde_productos(
     portada_path = _buscar_asset(carpeta_assets, portada_fname)
     contra_path  = _buscar_asset(carpeta_assets, contra_fname)
 
+    def _png_a_jpeg_tmp(src_path, nombre_tmp):
+        """Convierte PNG a JPEG en /tmp para que ReportLab lo procese sin colgarse."""
+        if not src_path or not os.path.exists(src_path):
+            return src_path
+        if src_path.lower().endswith(('.jpg', '.jpeg')):
+            return src_path
+        dest = f'/tmp/{nombre_tmp}.jpg'
+        if os.path.exists(dest) and os.path.getsize(dest) > 1000:
+            return dest
+        try:
+            from PIL import Image as _PIL
+            img = _PIL.open(src_path)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                fondo = _PIL.new('RGB', img.size, (255, 255, 255))
+                fondo.paste(img.convert('RGB'), mask=img.split()[-1])
+                img = fondo
+            else:
+                img = img.convert('RGB')
+            img.save(dest, 'JPEG', quality=90, optimize=True)
+            return dest
+        except Exception as e:
+            log(f"  ⚠️ No se pudo convertir {src_path}: {e}")
+            return src_path
+
+    portada_path = _png_a_jpeg_tmp(portada_path, f'portada_{marca}_{tipo_catalogo}')
+    contra_path  = _png_a_jpeg_tmp(contra_path,  f'contra_{marca}_{tipo_catalogo}')
+
     # Pre-cargar portada y contraportada como ImageReader en memoria
-    # (evita re-leer el archivo en disco en cada drawImage — más rápido)
     log("  📄 Pre-cargando portada y contraportada...")
     try:
-        portada_reader = ImageReader(portada_path) if os.path.exists(portada_path) else None
-    except Exception:
+        portada_reader = ImageReader(portada_path) if portada_path and os.path.exists(portada_path) else None
+        if portada_reader:
+            log(f"  ✅ Portada pre-cargada")
+    except Exception as e:
+        log(f"  ⚠️ Portada reader: {e}")
         portada_reader = None
     try:
-        contra_reader = ImageReader(contra_path) if os.path.exists(contra_path) else None
-    except Exception:
+        contra_reader = ImageReader(contra_path) if contra_path and os.path.exists(contra_path) else None
+        if contra_reader:
+            log(f"  ✅ Contraportada pre-cargada")
+    except Exception as e:
+        log(f"  ⚠️ Contraportada reader: {e}")
         contra_reader = None
 
     # Pre-cargar fondos de página en memoria (se reusan en cada producto)
@@ -650,16 +684,16 @@ def generar_pdf_desde_productos(
     bg_reader     = None
     bg_pro_reader = None
     if bg_fname:
-        bg_path = _buscar_asset(carpeta_assets, bg_fname)
-        if os.path.exists(bg_path):
+        bg_path = _png_a_jpeg_tmp(_buscar_asset(carpeta_assets, bg_fname), f'bg_{marca}_{tipo_catalogo}')
+        if bg_path and os.path.exists(bg_path):
             try:
                 bg_reader = ImageReader(bg_path)
                 log(f"  ✅ Fondo página pre-cargado: {bg_fname}")
             except Exception as e:
                 log(f"  ⚠️ Fondo página: {e}")
     if bg_pro_fname:
-        bg_pro_path = _buscar_asset(carpeta_assets, bg_pro_fname)
-        if os.path.exists(bg_pro_path):
+        bg_pro_path = _png_a_jpeg_tmp(_buscar_asset(carpeta_assets, bg_pro_fname), f'bg_pro_{marca}_{tipo_catalogo}')
+        if bg_pro_path and os.path.exists(bg_pro_path):
             try:
                 bg_pro_reader = ImageReader(bg_pro_path)
                 log(f"  ✅ Fondo PRO pre-cargado: {bg_pro_fname}")
