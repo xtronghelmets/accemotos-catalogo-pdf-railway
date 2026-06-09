@@ -396,10 +396,20 @@ def _draw_numero_pagina(c, num, total):
 
 # ── Full bleed ────────────────────────────────────────────────────────────────
 
-def _draw_full_bleed(c, img_path, texto_overlay=None, cfg=None):
-    if img_path and os.path.exists(img_path):
+def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
+    """Acepta ruta de archivo o ImageReader pre-cargado (más rápido)."""
+    reader = None
+    if isinstance(img_path_o_reader, ImageReader):
+        reader = img_path_o_reader
+    elif img_path_o_reader and os.path.exists(img_path_o_reader):
         try:
-            c.drawImage(img_path, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
+            reader = ImageReader(img_path_o_reader)
+        except Exception:
+            pass
+
+    if reader:
+        try:
+            c.drawImage(reader, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
         except Exception:
             c.setFillColor(HexColor('#111111'))
             c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
@@ -425,16 +435,26 @@ def _es_pro(producto):
 
 
 def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
-                     carpeta_assets, assets_tipo=None):
+                     carpeta_assets, assets_tipo=None, bg_reader=None, bg_pro_reader=None):
     # Fondo: imagen de plantilla para Xecuro, blanco para Xtrong
+    # Usar reader pre-cargado si está disponible (evita releer disco en cada página)
+    reader_a_usar = None
     pagina_bg = None
     if assets_tipo:
         if _es_pro(producto) and assets_tipo.get('pagina_bg_pro'):
+            reader_a_usar = bg_pro_reader
             pagina_bg = os.path.join(carpeta_assets, assets_tipo['pagina_bg_pro'])
         elif assets_tipo.get('pagina_bg'):
+            reader_a_usar = bg_reader
             pagina_bg = os.path.join(carpeta_assets, assets_tipo['pagina_bg'])
 
-    if pagina_bg and os.path.exists(pagina_bg):
+    if reader_a_usar:
+        try:
+            c.drawImage(reader_a_usar, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
+        except Exception:
+            c.setFillColor(white)
+            c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+    elif pagina_bg and os.path.exists(pagina_bg):
         try:
             c.drawImage(pagina_bg, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
         except Exception as _e:
@@ -612,43 +632,83 @@ def generar_pdf_desde_productos(
     portada_path = _buscar_asset(carpeta_assets, portada_fname)
     contra_path  = _buscar_asset(carpeta_assets, contra_fname)
 
+    # Pre-cargar portada y contraportada como ImageReader en memoria
+    # (evita re-leer el archivo en disco en cada drawImage — más rápido)
+    log("  📄 Pre-cargando portada y contraportada...")
+    try:
+        portada_reader = ImageReader(portada_path) if os.path.exists(portada_path) else None
+    except Exception:
+        portada_reader = None
+    try:
+        contra_reader = ImageReader(contra_path) if os.path.exists(contra_path) else None
+    except Exception:
+        contra_reader = None
+
+    # Pre-cargar fondos de página en memoria (se reusan en cada producto)
+    bg_fname     = assets_tipo_dict.get('pagina_bg')
+    bg_pro_fname = assets_tipo_dict.get('pagina_bg_pro')
+    bg_reader     = None
+    bg_pro_reader = None
+    if bg_fname:
+        bg_path = _buscar_asset(carpeta_assets, bg_fname)
+        if os.path.exists(bg_path):
+            try:
+                bg_reader = ImageReader(bg_path)
+                log(f"  ✅ Fondo página pre-cargado: {bg_fname}")
+            except Exception as e:
+                log(f"  ⚠️ Fondo página: {e}")
+    if bg_pro_fname:
+        bg_pro_path = _buscar_asset(carpeta_assets, bg_pro_fname)
+        if os.path.exists(bg_pro_path):
+            try:
+                bg_pro_reader = ImageReader(bg_pro_path)
+                log(f"  ✅ Fondo PRO pre-cargado: {bg_pro_fname}")
+            except Exception as e:
+                log(f"  ⚠️ Fondo PRO: {e}")
+
     assets_tipo = assets_tipo_dict
     log(f"  📄 Portada: {portada_fname}")
     log(f"  📄 Contraportada: {contra_fname}")
 
-    # Descargar imágenes (preferir foto de perfil, evitar frontal)
-    log("🖼️ Descargando imágenes...")
+    # Resolver imágenes desde caché (ya descargadas en woo_api / descargador)
+    # No se vuelve a descargar — solo se busca el archivo en carpeta_cache
+    log("🖼️ Resolviendo imágenes desde caché...")
     total = len(productos)
     imagenes_paths = {}
 
     for i, prod in enumerate(productos):
-        prog(int(40 * i / max(total, 1)))
         variaciones = prod.get('variaciones', [])
+        sku_key = prod.get('sku', '') or f'prod_{i}'
 
-        # Recolectar URLs únicas por color, priorizando no-frontales
-        urls_por_color = {}
+        # Recolectar SKUs únicos por color (priorizando no-frontales)
+        skus_por_color = {}
         for v in variaciones:
             color = v.get('color', 'default') or 'default'
             url   = v.get('imagenes', '')
-            if not url:
+            vsku  = v.get('sku', '') or sku_key
+            if not vsku:
                 continue
-            if color not in urls_por_color:
-                urls_por_color[color] = url
-            elif _es_foto_frontal(urls_por_color[color]) and not _es_foto_frontal(url):
-                urls_por_color[color] = url
+            if color not in skus_por_color:
+                skus_por_color[color] = (vsku, url)
+            elif _es_foto_frontal(skus_por_color[color][1]) and not _es_foto_frontal(url):
+                skus_por_color[color] = (vsku, url)
 
-        if not urls_por_color:
-            url = prod.get('imagenes', '')
-            if url:
-                urls_por_color['default'] = url
+        if not skus_por_color:
+            skus_por_color['default'] = (sku_key, prod.get('imagenes', ''))
 
         img_list = []
-        sku_key  = prod.get('sku', '') or f'prod_{i}'
-        for j, (color, url) in enumerate(list(urls_por_color.items())[:2]):
-            ck   = sku_key if j == 0 else f'{sku_key}_c{j}'
-            path = descargar_imagen(url, ck, prod.get('nombre', ''),
-                                    carpeta_cache, callback_log=log)
-            img_list.append(path)
+        for j, (color, (vsku, url)) in enumerate(list(skus_por_color.items())[:2]):
+            ck = vsku if j == 0 else f'{vsku}_c{j}'
+            # Intentar caché primero; si no existe, descargar
+            cache_jpg = os.path.join(carpeta_cache, f'{ck}.jpg')
+            if os.path.exists(cache_jpg) and os.path.getsize(cache_jpg) > 1000:
+                img_list.append(cache_jpg)
+            elif url:
+                path = descargar_imagen(url, ck, prod.get('nombre', ''),
+                                        carpeta_cache, callback_log=log)
+                img_list.append(path)
+            else:
+                img_list.append(None)
 
         imagenes_paths[i] = img_list if img_list else [None]
 
@@ -659,7 +719,7 @@ def generar_pdf_desde_productos(
 
     # Portada
     log("  📄 Portada...")
-    _draw_full_bleed(c, portada_path, texto_overlay=periodo or None, cfg=cfg)
+    _draw_full_bleed(c, portada_reader or portada_path, texto_overlay=periodo or None, cfg=cfg)
     c.showPage()
     prog(44)
 
@@ -670,12 +730,13 @@ def generar_pdf_desde_productos(
         img_path = img_list[0] if img_list else None
         log(f"  📝 [{i+1}/{total}] {prod['nombre'][:45]}")
         _pagina_producto(c, cfg, prod, img_path, mostrar_precios,
-                         i + 1, total, carpeta_assets, assets_tipo=assets_tipo)
+                         i + 1, total, carpeta_assets, assets_tipo=assets_tipo,
+                         bg_reader=bg_reader, bg_pro_reader=bg_pro_reader)
         c.showPage()
 
     # Contraportada
     log("  📄 Contraportada...")
-    _draw_full_bleed(c, contra_path)
+    _draw_full_bleed(c, contra_reader or contra_path)
     c.showPage()
 
     log("💾 Guardando PDF...")
