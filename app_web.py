@@ -166,6 +166,7 @@ def _ejecutar_generacion(job_id, marca_key, data):
         mostrar_precios   = data.get('mostrar_precios', True)
         solo_stock        = data.get('solo_stock', True)
         titulo_catalogo   = data.get('titulo', '').strip()
+        tipo_catalogo     = data.get('tipo_catalogo', '').strip()
         periodo           = data.get('periodo', '').strip()
 
         log(f"🔗 Conectando a API {m['nombre']}...")
@@ -202,6 +203,7 @@ def _ejecutar_generacion(job_id, marca_key, data):
             ruta_salida=ruta_pdf,
             marca=marca_key,
             titulo=titulo_catalogo,
+            tipo_catalogo=tipo_catalogo,
             periodo=periodo,
             mostrar_precios=mostrar_precios,
             carpeta_assets=carpeta_assets,
