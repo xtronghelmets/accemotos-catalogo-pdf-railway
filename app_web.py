@@ -187,8 +187,19 @@ def _ejecutar_generacion(job_id, marca_key, data):
         progreso(65)
 
         carpeta_cache  = f'/tmp/cache_imagenes/{marca_key}'
-        carpeta_assets = os.path.join(os.path.dirname(__file__), 'assets', marca_key)
         os.makedirs(carpeta_cache, exist_ok=True)
+        # Buscar assets en múltiples rutas posibles (Vercel vs local)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        carpeta_assets = os.path.join(base_dir, 'assets', marca_key)
+        for candidate in [
+            os.path.join(base_dir, 'assets', marca_key),
+            os.path.join(base_dir, '..', 'assets', marca_key),
+            os.path.join('/var/task', 'assets', marca_key),
+        ]:
+            if os.path.isdir(candidate):
+                carpeta_assets = candidate
+                break
+        log(f"  📁 Assets: {carpeta_assets} (existe: {os.path.isdir(carpeta_assets)})")
 
         ahora        = datetime.now()
         titulo_slug  = titulo_catalogo.replace(' ', '_') if titulo_catalogo else 'catalogo'
