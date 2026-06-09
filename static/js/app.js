@@ -46,8 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-gen').addEventListener('click', iniciarGeneracion);
 
-  actualizarTheme();
-  renderTipos();
+  // Aplicar selección visual de XTRONG al cargar
+  seleccionarMarca('xtrong');
 });
 
 // ── Marca ─────────────────────────────────────────────────────────────────
