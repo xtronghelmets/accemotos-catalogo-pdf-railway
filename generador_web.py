@@ -13,6 +13,7 @@ Motor PDF con diseño fiel a PLANTILLA_HOJA.png:
 import os
 import re
 import textwrap
+import threading
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor, white, black
 from reportlab.lib.utils import ImageReader
@@ -632,51 +633,58 @@ def generar_pdf_desde_productos(
     portada_path = _buscar_asset(carpeta_assets, portada_fname)
     contra_path  = _buscar_asset(carpeta_assets, contra_fname)
 
-    def _png_a_jpeg_tmp(src_path, nombre_tmp):
-        """Convierte PNG a JPEG en /tmp para que ReportLab lo procese sin colgarse."""
-        if not src_path or not os.path.exists(src_path):
-            return src_path
-        if src_path.lower().endswith(('.jpg', '.jpeg')):
-            return src_path
-        dest = f'/tmp/{nombre_tmp}.jpg'
-        if os.path.exists(dest) and os.path.getsize(dest) > 1000:
-            return dest
-        try:
-            from PIL import Image as _PIL
-            img = _PIL.open(src_path)
-            if img.mode in ('RGBA', 'LA', 'P'):
-                if img.mode == 'P':
-                    img = img.convert('RGBA')
-                fondo = _PIL.new('RGB', img.size, (255, 255, 255))
-                fondo.paste(img.convert('RGB'), mask=img.split()[-1])
-                img = fondo
-            else:
-                img = img.convert('RGB')
-            img.save(dest, 'JPEG', quality=90, optimize=True)
-            return dest
-        except Exception as e:
-            log(f"  ⚠️ No se pudo convertir {src_path}: {e}")
-            return src_path
+    def _cargar_image_reader_seguro(path, nombre, timeout_seg=8):
+        """Carga ImageReader con timeout para evitar cuelgues con PNGs grandes."""
+        if not path or not os.path.exists(path):
+            log(f"  ⚠️ No existe: {nombre} ({path})")
+            return None
+        result = [None]
+        error  = [None]
 
-    portada_path = _png_a_jpeg_tmp(portada_path, f'portada_{marca}_{tipo_catalogo}')
-    contra_path  = _png_a_jpeg_tmp(contra_path,  f'contra_{marca}_{tipo_catalogo}')
+        def _cargar():
+            try:
+                # Intentar primero con PIL para controlar el proceso
+                from PIL import Image as _PIL
+                from io import BytesIO
+                img = _PIL.open(path)
+                # Reducir resolución si es muy grande (>1500px en cualquier lado)
+                w, h = img.size
+                MAX = 1200
+                if max(w, h) > MAX:
+                    if w >= h:
+                        img = img.thumbnail((MAX, int(h * MAX / w)), _PIL.LANCZOS)
+                    else:
+                        img = img.thumbnail((int(w * MAX / h), MAX), _PIL.LANCZOS)
+                # Convertir a RGB sin alpha
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    fondo = _PIL.new('RGB', img.size, (255, 255, 255))
+                    fondo.paste(img.convert('RGB'), mask=img.split()[-1])
+                    img = fondo
+                else:
+                    img = img.convert('RGB')
+                buf = BytesIO()
+                img.save(buf, 'JPEG', quality=88, optimize=True)
+                buf.seek(0)
+                result[0] = ImageReader(buf)
+            except Exception as e:
+                error[0] = str(e)
 
-    # Pre-cargar portada y contraportada como ImageReader en memoria
-    log("  📄 Pre-cargando portada y contraportada...")
-    try:
-        portada_reader = ImageReader(portada_path) if portada_path and os.path.exists(portada_path) else None
-        if portada_reader:
-            log(f"  ✅ Portada pre-cargada")
-    except Exception as e:
-        log(f"  ⚠️ Portada reader: {e}")
-        portada_reader = None
-    try:
-        contra_reader = ImageReader(contra_path) if contra_path and os.path.exists(contra_path) else None
-        if contra_reader:
-            log(f"  ✅ Contraportada pre-cargada")
-    except Exception as e:
-        log(f"  ⚠️ Contraportada reader: {e}")
-        contra_reader = None
+        t = threading.Thread(target=_cargar, daemon=True)
+        t.start()
+        t.join(timeout=timeout_seg)
+        if t.is_alive():
+            log(f"  ⚠️ Timeout cargando {nombre} — se usará fallback")
+            return None
+        if error[0]:
+            log(f"  ⚠️ Error {nombre}: {error[0]}")
+            return None
+        log(f"  ✅ {nombre} pre-cargado")
+        return result[0]
+
+    portada_reader = _cargar_image_reader_seguro(portada_path, "Portada")
+    contra_reader  = _cargar_image_reader_seguro(contra_path,  "Contraportada")
 
     # Pre-cargar fondos de página en memoria (se reusan en cada producto)
     bg_fname     = assets_tipo_dict.get('pagina_bg')
@@ -684,21 +692,11 @@ def generar_pdf_desde_productos(
     bg_reader     = None
     bg_pro_reader = None
     if bg_fname:
-        bg_path = _png_a_jpeg_tmp(_buscar_asset(carpeta_assets, bg_fname), f'bg_{marca}_{tipo_catalogo}')
-        if bg_path and os.path.exists(bg_path):
-            try:
-                bg_reader = ImageReader(bg_path)
-                log(f"  ✅ Fondo página pre-cargado: {bg_fname}")
-            except Exception as e:
-                log(f"  ⚠️ Fondo página: {e}")
+        bg_path   = _buscar_asset(carpeta_assets, bg_fname)
+        bg_reader = _cargar_image_reader_seguro(bg_path, f"Fondo página ({bg_fname})")
     if bg_pro_fname:
-        bg_pro_path = _png_a_jpeg_tmp(_buscar_asset(carpeta_assets, bg_pro_fname), f'bg_pro_{marca}_{tipo_catalogo}')
-        if bg_pro_path and os.path.exists(bg_pro_path):
-            try:
-                bg_pro_reader = ImageReader(bg_pro_path)
-                log(f"  ✅ Fondo PRO pre-cargado: {bg_pro_fname}")
-            except Exception as e:
-                log(f"  ⚠️ Fondo PRO: {e}")
+        bg_pro_path   = _buscar_asset(carpeta_assets, bg_pro_fname)
+        bg_pro_reader = _cargar_image_reader_seguro(bg_pro_path, f"Fondo PRO ({bg_pro_fname})")
 
     assets_tipo = assets_tipo_dict
     log(f"  📄 Portada: {portada_fname}")
