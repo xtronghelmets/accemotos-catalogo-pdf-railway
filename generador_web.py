@@ -724,12 +724,10 @@ def generar_pdf_desde_productos(
 
         # Recolectar SKUs únicos por color (priorizando no-frontales)
         skus_por_color = {}
-        for v in variaciones:
+        for vi, v in enumerate(variaciones):
             color = v.get('color', 'default') or 'default'
             url   = v.get('imagenes', '')
-            vsku  = v.get('sku', '') or sku_key
-            if not vsku:
-                continue
+            vsku  = v.get('sku', '') or f'{sku_key}_v{vi}'  # fallback si SKU vacío
             if color not in skus_por_color:
                 skus_por_color[color] = (vsku, url)
             elif _es_foto_frontal(skus_por_color[color][1]) and not _es_foto_frontal(url):
