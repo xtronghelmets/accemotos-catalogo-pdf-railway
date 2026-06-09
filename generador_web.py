@@ -92,15 +92,17 @@ ASSETS_POR_TIPO = {
 }
 
 # Logos de certificación
-# Assets de certificación por marca (nombres exactos de archivo)
+# Assets de certificación — se prueban múltiples nombres posibles
 CERT_ASSETS = {
     'xtrong': {
-        'dot_ece': 'CERTIFICACIÓN_DOTECE.png',
-        'dot':     'CERTIFICACIÓN_DOT.png',
+        'dot_ece': ['CERTIFICACIÓN_DOTECE.png', 'CERTIFICACIÓN DOT-ECE.png',
+                    'CERTIFICACION_DOTECE.png', 'CERTIFICACION DOT-ECE.png'],
+        'dot':     ['CERTIFICACIÓN_DOT.png', 'CERTIFICACIÓN DOT.png',
+                    'CERTIFICACION_DOT.png', 'CERTIFICACION DOT.png'],
     },
     'xecuro': {
-        'dot_ece': 'ÍCONO_DOT.png',
-        'dot':     'ÍCONO_DOT.png',
+        'dot_ece': ['ÍCONO_DOT.png', 'ICONO_DOT.png', 'ÍCONO DOT.png'],
+        'dot':     ['ÍCONO_DOT.png', 'ICONO_DOT.png', 'ÍCONO DOT.png'],
     },
 }
 
@@ -231,8 +233,15 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     marca = cfg.get('_marca', 'xtrong')
     cert_map = CERT_ASSETS.get(marca, CERT_ASSETS['xtrong'])
     key = 'dot_ece' if (tiene_dot and tiene_ece) else 'dot'
-    fname = cert_map.get(key, '')
-    cert_path = os.path.join(carpeta_assets, fname)
+    fnames = cert_map.get(key, [])
+    cert_path = None
+    for fname in fnames:
+        candidate = os.path.join(carpeta_assets, fname)
+        if os.path.exists(candidate):
+            cert_path = candidate
+            break
+    if not cert_path:
+        cert_path = ''
 
     # Posición: esquina derecha, justo bajo el header
     cert_w = 90
@@ -563,14 +572,31 @@ def generar_pdf_desde_productos(
     assets_tipo_dict = ASSETS_POR_TIPO.get(tipo_catalogo, {})
     portada_fname  = assets_tipo_dict.get('portada', 'PORTADA.jpg')
     contra_fname   = assets_tipo_dict.get('contraportada', 'CONTRAPORTADA.jpg')
-    portada_path   = os.path.join(carpeta_assets, portada_fname)
-    contra_path    = os.path.join(carpeta_assets, contra_fname)
-    # Fallback extensiones
-    for ext in ('.png', '.jpg', '.jpeg'):
-        if not os.path.exists(portada_path):
-            portada_path = os.path.join(carpeta_assets, portada_fname.rsplit('.', 1)[0] + ext)
-        if not os.path.exists(contra_path):
-            contra_path  = os.path.join(carpeta_assets, contra_fname.rsplit('.', 1)[0] + ext)
+
+    def _buscar_asset(carpeta, fname):
+        """Busca un asset probando nombre exacto, con espacios y diferentes extensiones."""
+        candidatos = [fname]
+        # Versión con espacios (guion bajo → espacio)
+        candidatos.append(fname.replace('_', ' '))
+        # Versión sin tildes
+        import unicodedata
+        sin_tildes = ''.join(c for c in unicodedata.normalize('NFD', fname)
+                             if unicodedata.category(c) != 'Mn')
+        candidatos.append(sin_tildes)
+        candidatos.append(sin_tildes.replace('_', ' '))
+        # Probar con diferentes extensiones
+        base_fname = fname.rsplit('.', 1)[0]
+        for ext in ('.png', '.jpg', '.jpeg', '.PNG', '.JPG'):
+            candidatos.append(base_fname + ext)
+            candidatos.append(base_fname.replace('_', ' ') + ext)
+        for c in candidatos:
+            path = os.path.join(carpeta, c)
+            if os.path.exists(path):
+                return path
+        return os.path.join(carpeta, fname)  # fallback aunque no exista
+
+    portada_path = _buscar_asset(carpeta_assets, portada_fname)
+    contra_path  = _buscar_asset(carpeta_assets, contra_fname)
 
     assets_tipo = assets_tipo_dict
     log(f"  📄 Portada: {portada_fname}")
