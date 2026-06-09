@@ -512,6 +512,30 @@ def generar_pdf_desde_productos(
     cfg = dict(MARCAS_CONFIG.get(marca, MARCAS_CONFIG['xtrong']))
     cfg['_marca'] = marca
 
+    # Resolver carpeta de assets — buscar en múltiples rutas posibles
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    marca_upper = marca.upper()  # XTRONG / XECURO
+    carpeta_assets_candidatos = [
+        os.path.join(base_dir, 'assets', marca),         # assets/xtrong
+        os.path.join(base_dir, 'assets', marca_upper),   # assets/XTRONG
+        os.path.join(base_dir, '..', 'assets', marca),
+        os.path.join(base_dir, '..', 'assets', marca_upper),
+        os.path.join('/var/task', 'assets', marca),
+        os.path.join('/var/task', 'assets', marca_upper),
+    ]
+    # carpeta_assets se sobreescribe abajo desde app_web, pero si llega vacía usamos detección
+    _carpeta_assets_detectada = carpeta_assets
+    if not os.path.isdir(_carpeta_assets_detectada):
+        for c in carpeta_assets_candidatos:
+            if os.path.isdir(c):
+                _carpeta_assets_detectada = c
+                break
+    carpeta_assets = _carpeta_assets_detectada
+    log(f"  📁 Assets dir: {carpeta_assets}")
+    log(f"  📁 Assets existe: {os.path.isdir(carpeta_assets)}")
+    if os.path.isdir(carpeta_assets):
+        log(f"  📁 Archivos: {os.listdir(carpeta_assets)[:5]}")
+
     # Registrar fuentes TTF
     for font_name, font_file in [('Kanit', 'Kanit-Bold.ttf'), ('Sora', 'Sora-Regular.ttf')]:
         fp = os.path.join(carpeta_assets, font_file)

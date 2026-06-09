@@ -192,14 +192,20 @@ def _ejecutar_generacion(job_id, marca_key, data):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         carpeta_assets = os.path.join(base_dir, 'assets', marca_key)
         for candidate in [
-            os.path.join(base_dir, 'assets', marca_key),
+            os.path.join(base_dir, 'assets', marca_key),           # assets/xtrong
+            os.path.join(base_dir, 'assets', marca_key.upper()),   # assets/XTRONG
             os.path.join(base_dir, '..', 'assets', marca_key),
+            os.path.join(base_dir, '..', 'assets', marca_key.upper()),
             os.path.join('/var/task', 'assets', marca_key),
+            os.path.join('/var/task', 'assets', marca_key.upper()),
         ]:
             if os.path.isdir(candidate):
                 carpeta_assets = candidate
+                log(f"  📁 Assets encontrado en: {candidate}")
                 break
-        log(f"  📁 Assets: {carpeta_assets} (existe: {os.path.isdir(carpeta_assets)})")
+        else:
+            log(f"  ⚠️ Assets NO encontrado. Base dir: {base_dir}")
+            log(f"  ⚠️ Contenido de assets/: {os.listdir(os.path.join(base_dir,'assets')) if os.path.isdir(os.path.join(base_dir,'assets')) else 'no existe'}")
 
         ahora        = datetime.now()
         titulo_slug  = titulo_catalogo.replace(' ', '_') if titulo_catalogo else 'catalogo'

@@ -17,8 +17,8 @@ const TIPOS_CATALOGO = {
     {
       key:    'integrales',
       nombre: 'Cascos integrales',
-      desc:   'Integrales, Carretera, Multipropósito',
-      cats:   ['Integrales', 'Carretera', 'Multipropósito'],
+      desc:   'Integrales',
+      cats:   ['Integrales'],
     },
     {
       key:    'textiles_accesorios',
