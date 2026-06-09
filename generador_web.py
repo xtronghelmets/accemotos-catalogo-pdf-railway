@@ -398,27 +398,21 @@ def _draw_numero_pagina(c, num, total):
 # ── Full bleed ────────────────────────────────────────────────────────────────
 
 def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
-    """Acepta ruta de archivo o ImageReader pre-cargado (más rápido)."""
-    reader = None
+    """Acepta ImageReader pre-cargado (rápido) o None (fallback color sólido).
+    NUNCA intenta abrir un archivo PNG directamente — eso cuelga ReportLab en Vercel."""
+    dibujado = False
     if isinstance(img_path_o_reader, ImageReader):
-        reader = img_path_o_reader
-    elif img_path_o_reader and os.path.exists(img_path_o_reader):
         try:
-            reader = ImageReader(img_path_o_reader)
+            c.drawImage(img_path_o_reader, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
+            dibujado = True
         except Exception:
             pass
 
-    if reader:
-        try:
-            c.drawImage(reader, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
-        except Exception:
-            c.setFillColor(HexColor('#111111'))
-            c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-    else:
+    if not dibujado:
+        # Fallback: fondo negro sólido (nunca se cuelga)
         c.setFillColor(HexColor('#111111'))
         c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
 
-    # Período sobre la portada (esquina superior derecha bajo polígono blanco)
     if texto_overlay and cfg:
         c.setFillColor(_hx(cfg['color_principal']))
         c.setFont('Helvetica-Bold', 11)
@@ -455,14 +449,8 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         except Exception:
             c.setFillColor(white)
             c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-    elif pagina_bg and os.path.exists(pagina_bg):
-        try:
-            c.drawImage(pagina_bg, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
-        except Exception as _e:
-            c.setFillColor(white)
-            c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
     else:
-        # Fondo blanco por defecto
+        # Fallback: fondo blanco — nunca intentar abrir PNG directamente (cuelga en Vercel)
         c.setFillColor(white)
         c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
 
