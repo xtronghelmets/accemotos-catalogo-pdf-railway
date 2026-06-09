@@ -634,10 +634,20 @@ def generar_pdf_desde_productos(
     contra_path  = _buscar_asset(carpeta_assets, contra_fname)
 
     def _cargar_image_reader_seguro(path, nombre, timeout_seg=8):
-        """Carga ImageReader con timeout para evitar cuelgues con PNGs grandes."""
+        """Carga ImageReader con timeout. Prefiere _opt.jpg si existe."""
         if not path or not os.path.exists(path):
             log(f"  ⚠️ No existe: {nombre} ({path})")
             return None
+        # Preferir versión _opt.jpg pre-optimizada si existe (sin necesidad de PIL)
+        base, _ = os.path.splitext(path)
+        opt_path = base + '_opt.jpg'
+        if os.path.exists(opt_path) and os.path.getsize(opt_path) > 1000:
+            try:
+                reader = ImageReader(opt_path)
+                log(f"  ✅ {nombre} cargado (opt.jpg)")
+                return reader
+            except Exception:
+                pass  # fallback al proceso normal
         result = [None]
         error  = [None]
 
