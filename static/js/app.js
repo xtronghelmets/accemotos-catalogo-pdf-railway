@@ -1,16 +1,42 @@
-/* app.js — lógica de la interfaz del generador de catálogos */
+/* app.js — generador de catálogos v2 */
 
 const MARCAS = {
   xtrong: { color: '#005654', acento: '#B6FF00' },
   xecuro: { color: '#303830', acento: '#FFAD40' },
 };
 
-let marcaActual    = 'xtrong';
-let categoriasCats = {};   // marca → [nombres]
-let selCats        = {};   // marca → Set de seleccionadas
-let toggles        = { precios: true, stock: true, accesorios: false };
-let jobActual      = null;
-let pollInterval   = null;
+// Tipos de catálogo por marca con sus categorías WooCommerce asociadas
+const TIPOS_CATALOGO = {
+  xtrong: [
+    {
+      key:    'abatibles_abiertos',
+      nombre: 'Cascos abatibles y abiertos',
+      desc:   'Abatibles, Abiertos',
+      cats:   ['Abatibles', 'Abiertos'],
+    },
+    {
+      key:    'integrales',
+      nombre: 'Cascos integrales',
+      desc:   'Integrales, Carretera, Multipropósito',
+      cats:   ['Integrales', 'Carretera', 'Multipropósito'],
+    },
+    {
+      key:    'textiles_accesorios',
+      nombre: 'Textiles y accesorios',
+      desc:   'Chaquetas, Guantes, Impermeables y más',
+      cats:   ['Chaquetas', 'Guantes', 'IMPERMEABLES', 'Tela', 'Urbanas',
+               'ACCESORIOS', 'Candados', 'INTERCOMS', 'Intercomunicadores',
+               'Rodilleras y Coderas', 'Body armors', 'INDUMENTARIA DE PROTECCIÓN',
+               'Antiempañantes', 'Cobertores/Pijamas', 'Caña corta'],
+    },
+  ],
+  xecuro: null, // dinámico desde API
+};
+
+let marcaActual  = 'xtrong';
+let tipoActual   = 'abatibles_abiertos';
+let jobActual    = null;
+let pollInterval = null;
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -18,38 +44,30 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('input[name="marca"]').forEach(r => {
     r.addEventListener('change', e => seleccionarMarca(e.target.value));
   });
-
-  document.querySelectorAll('.tog').forEach(t => {
-    t.addEventListener('click', () => toggleSwitch(t));
-  });
-
   document.getElementById('btn-gen').addEventListener('click', iniciarGeneracion);
 
-  cargarCategorias('xtrong');
-  cargarCategorias('xecuro');
   actualizarTheme();
-  renderPreview();
+  renderTipos();
 });
 
 // ── Marca ─────────────────────────────────────────────────────────────────
 
 function seleccionarMarca(marca) {
   marcaActual = marca;
+  tipoActual  = null;
 
   ['xtrong', 'xecuro'].forEach(m => {
     const opt = document.getElementById(`opt-${m}`);
     const rc  = document.getElementById(`rc-${m}`);
     const bn  = document.getElementById(`bn-${m}`);
     const sel = m === marca;
-
     opt.className = `brand-option${sel ? ` selected-${m}` : ''}`;
     rc.className  = `radio-circle${sel ? ` checked-${m}` : ''}`;
     bn.className  = `brand-name${sel ? ` ${m}` : ''}`;
   });
 
   actualizarTheme();
-  renderCategorias();
-  renderPreview();
+  renderTipos();
 }
 
 function actualizarTheme() {
@@ -58,110 +76,61 @@ function actualizarTheme() {
   document.documentElement.style.setProperty('--marca-acento', cfg.acento);
 }
 
-// ── Categorías ────────────────────────────────────────────────────────────
+// ── Tipos de catálogo ─────────────────────────────────────────────────────
 
-async function cargarCategorias(marca) {
-  try {
-    const r = await fetch(`/api/categorias/${marca}`);
-    const d = await r.json();
-    if (d.categorias) {
-      categoriasCats[marca] = d.categorias;
-      selCats[marca] = new Set(d.categorias); // todas seleccionadas por defecto
-      const sub = document.getElementById(`bs-${marca}`);
-      const url = marca === 'xtrong' ? 'xtronghelmets.com' : 'xecurohelmets.com';
-      sub.textContent = `${url} · ${d.categorias.length} categ.`;
-    }
-  } catch (e) {
-    console.warn(`Error cargando categorías ${marca}:`, e);
-  }
-  if (marca === marcaActual) renderCategorias();
-}
+function renderTipos() {
+  const lista = document.getElementById('cat-tipo-list');
+  const tipos = TIPOS_CATALOGO[marcaActual];
 
-function renderCategorias() {
-  const grid = document.getElementById('cat-grid');
-  const cats = categoriasCats[marcaActual] || [];
-  const sel  = selCats[marcaActual] || new Set();
-
-  if (!cats.length) {
-    grid.innerHTML = '<div class="cat-loading">Cargando categorías...</div>';
+  if (!tipos) {
+    lista.innerHTML = '<div class="cat-loading">Cargando tipos...</div>';
     return;
   }
 
-  grid.innerHTML = cats.map(cat => {
-    const on  = sel.has(cat);
-    const cls = on ? `on-${marcaActual}` : '';
-    const chk = on ? `<svg viewBox="0 0 9 7" fill="none"><path d="M1 3.5l2.5 2.5 4.5-5" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>` : '';
+  // Seleccionar primero por defecto
+  if (!tipoActual || !tipos.find(t => t.key === tipoActual)) {
+    tipoActual = tipos[0].key;
+  }
+
+  lista.innerHTML = tipos.map(t => {
+    const sel = t.key === tipoActual;
+    const cls = sel ? `selected-${marcaActual}` : '';
+    const rCls = sel ? `checked-${marcaActual}` : '';
     return `
-      <div class="cat-chip ${cls}" data-cat="${esc(cat)}" onclick="toggleCat('${esc(cat)}')">
-        <div class="chip-check ${cls}">${chk}</div>
-        <span class="chip-label ${cls}">${cat}</span>
+      <div class="cat-tipo-item ${cls}" data-key="${t.key}" onclick="seleccionarTipo('${t.key}')">
+        <div class="cat-tipo-radio ${rCls}"><div class="radio-dot"></div></div>
+        <div class="cat-tipo-info">
+          <div class="cat-tipo-nombre">${t.nombre}</div>
+          <div class="cat-tipo-desc">${t.desc}</div>
+        </div>
       </div>`;
   }).join('');
 }
 
-function toggleCat(cat) {
-  const sel = selCats[marcaActual];
-  if (!sel) return;
-  if (sel.has(cat)) sel.delete(cat);
-  else sel.add(cat);
-  renderCategorias();
-}
-
-function esc(s) {
-  return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-}
-
-// ── Toggles ───────────────────────────────────────────────────────────────
-
-function toggleSwitch(el) {
-  const key = el.dataset.key;
-  toggles[key] = !toggles[key];
-  el.className = `tog ${toggles[key] ? 'on' : 'off'}`;
-}
-
-// ── Preview ───────────────────────────────────────────────────────────────
-
-function renderPreview() {
-  const strip  = document.getElementById('preview-strip');
-  const cfg    = MARCAS[marcaActual];
-  const acento = cfg.acento;
-  const color  = cfg.color;
-  const VISIBLE = 4;
-
-  const makeLine = () => `<div class="p-thumb-line"></div>`;
-  const makeThumb = () => `
-    <div class="p-thumb">
-      <div class="p-thumb-h" style="background:${color}"></div>
-      <div class="p-thumb-body"><div class="p-thumb-rect"></div></div>
-      <div class="p-thumb-foot">${makeLine()}${makeLine()}</div>
-    </div>`;
-
-  const cover = `
-    <div class="p-thumb cover" style="background:${color}">
-      <div class="p-thumb-body">
-        <div style="width:24px;height:2px;background:${acento};border-radius:1px;opacity:.8;"></div>
-        <div class="cover-label" style="color:${acento};">PORTADA</div>
-      </div>
-    </div>`;
-
-  strip.innerHTML = cover + makeThumb().repeat(VISIBLE) + `<div class="p-more">···</div>`;
+function seleccionarTipo(key) {
+  tipoActual = key;
+  renderTipos();
 }
 
 // ── Generación ────────────────────────────────────────────────────────────
 
 async function iniciarGeneracion() {
-  const titulo  = document.getElementById('titulo').value.trim();
   const periodo = document.getElementById('periodo').value.trim();
-  const sel     = selCats[marcaActual] || new Set();
 
-  if (sel.size === 0) {
-    alert('Selecciona al menos una categoría.');
+  if (!tipoActual) {
+    alert('Selecciona un tipo de catálogo.');
     return;
   }
 
-  // UI: deshabilitar botón, mostrar card progreso
+  const tipos = TIPOS_CATALOGO[marcaActual];
+  const tipo  = tipos ? tipos.find(t => t.key === tipoActual) : null;
+  if (!tipo) {
+    alert('Tipo de catálogo no válido.');
+    return;
+  }
+
   const btn = document.getElementById('btn-gen');
-  btn.disabled = true;
+  btn.disabled    = true;
   btn.textContent = 'Generando...';
   document.getElementById('card-progreso').style.display = 'block';
   document.getElementById('card-progreso').scrollIntoView({ behavior: 'smooth' });
@@ -170,11 +139,12 @@ async function iniciarGeneracion() {
 
   const payload = {
     marca:           marcaActual,
-    titulo:          titulo,
+    titulo:          tipo.nombre,
+    tipo_catalogo:   tipo.key,
     periodo:         periodo,
-    categorias:      [...sel],
-    mostrar_precios: toggles.precios,
-    solo_stock:      toggles.stock,
+    categorias:      tipo.cats,
+    mostrar_precios: true,
+    solo_stock:      true,
   };
 
   try {
@@ -202,10 +172,8 @@ function iniciarPolling() {
       const r = await fetch(`/api/estado/${jobActual}`);
       const d = await r.json();
 
-      // Progreso
       actualizarProgreso(d.progreso, d.logs[d.logs.length - 1] || '');
 
-      // Nuevos logs
       const nuevos = d.logs.slice(logCount);
       nuevos.forEach(l => addAviso(l));
       logCount = d.logs.length;
@@ -219,7 +187,6 @@ function iniciarPolling() {
         clearInterval(pollInterval);
         actualizarProgreso(100, '✅ PDF listo');
         setNavStatus('ok', 'Listo');
-        // Descargar automáticamente
         window.location.href = `/api/descargar/${jobActual}`;
         resetBtn();
       }
@@ -232,15 +199,18 @@ function iniciarPolling() {
 function actualizarProgreso(pct, label) {
   document.getElementById('prog-fill').style.width = pct + '%';
   document.getElementById('prog-pct').textContent  = pct + '%';
-  if (label) document.getElementById('prog-label').textContent = label.replace(/^[^a-zA-Z0-9✅⚠️❌🔗📦🖼️📄💾]*/, '').slice(0, 60);
+  if (label) {
+    const txt = label.replace(/^[\s\S]{0,3}/, '').slice(0, 60);
+    document.getElementById('prog-label').textContent = label.slice(0, 70);
+  }
 }
 
 function addAviso(msg, tipo) {
   const box  = document.getElementById('avisos-box');
   const now  = new Date();
   const time = now.toTimeString().slice(0, 8);
-  let cls    = '';
-  if (msg.includes('✅') || msg.includes('listo') || msg.includes('Lista')) cls = 'ok';
+  let cls = '';
+  if (msg.includes('✅') || msg.includes('listo')) cls = 'ok';
   if (msg.includes('⚠️') || msg.includes('Sin imagen')) cls = 'warn';
   if (tipo === 'err' || msg.includes('❌')) cls = 'err';
   const line = document.createElement('div');
@@ -264,6 +234,6 @@ function resetBtn() {
 function setNavStatus(state, text) {
   const dot  = document.querySelector('.nav-dot');
   const span = document.querySelector('.nav-api-text');
-  dot.className  = `nav-dot ${state === 'ok' ? '' : state}`;
+  dot.className    = `nav-dot ${state === 'ok' ? '' : state}`;
   span.textContent = text;
 }
