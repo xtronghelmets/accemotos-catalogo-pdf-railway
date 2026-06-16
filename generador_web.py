@@ -14,6 +14,8 @@ import os
 import re
 import textwrap
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor, white, black
 from reportlab.lib.utils import ImageReader
@@ -277,6 +279,44 @@ def _es_foto_frontal(url_o_path):
     return any(ind in nombre for ind in indicadores)
 
 
+def _img_a_reader(img_path, timeout_seg=8):
+    """Abre img_path como ImageReader en memoria (JPEG) con timeout.
+    Evita que PIL o ReportLab se cuelguen con imágenes grandes."""
+    if not img_path or not os.path.exists(img_path):
+        return None, None, None
+    result = [None]
+    size   = [None]
+    def _cargar():
+        try:
+            img = PILImage.open(img_path)
+            iw, ih = img.size
+            MAX = 900
+            if max(iw, ih) > MAX:
+                img.thumbnail((MAX, MAX), PILImage.LANCZOS)
+                iw, ih = img.size
+            if img.mode in ('RGBA', 'LA', 'P'):
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                bg = PILImage.new('RGB', img.size, (255, 255, 255))
+                bg.paste(img.convert('RGB'), mask=img.split()[-1])
+                img = bg
+            else:
+                img = img.convert('RGB')
+            buf = BytesIO()
+            img.save(buf, 'JPEG', quality=82)
+            buf.seek(0)
+            result[0] = ImageReader(buf)
+            size[0] = (iw, ih)
+        except Exception:
+            pass
+    t = threading.Thread(target=_cargar, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seg)
+    if result[0] and size[0]:
+        return result[0], size[0][0], size[0][1]
+    return None, None, None
+
+
 def _draw_imagen(c, img_path, x, y_top, w, h_max):
     y_bottom = y_top - h_max
     if not img_path or not os.path.exists(img_path):
@@ -286,8 +326,9 @@ def _draw_imagen(c, img_path, x, y_top, w, h_max):
         c.rect(x, y_bottom, w, h_max, fill=1, stroke=1)
         return y_bottom
     try:
-        img = PILImage.open(img_path)
-        iw, ih = img.size
+        reader, iw, ih = _img_a_reader(img_path)
+        if reader is None:
+            return y_bottom
         ratio = iw / ih
         if ratio >= w / h_max:
             dw, dh = w, w / ratio
@@ -295,11 +336,7 @@ def _draw_imagen(c, img_path, x, y_top, w, h_max):
             dh, dw = h_max, h_max * ratio
         dx = x + (w - dw) / 2
         dy = y_bottom + (h_max - dh) / 2
-        ext = os.path.splitext(img_path)[1].lower()
-        if ext == '.png':
-            c.drawImage(img_path, dx, dy, dw, dh, mask='auto')
-        else:
-            c.drawImage(img_path, dx, dy, dw, dh)
+        c.drawImage(reader, dx, dy, dw, dh, mask='auto')
     except Exception:
         pass
     return y_bottom
@@ -711,45 +748,58 @@ def generar_pdf_desde_productos(
     log(f"  📄 Portada: {portada_fname}")
     log(f"  📄 Contraportada: {contra_fname}")
 
-    # Resolver imágenes desde caché (ya descargadas en woo_api / descargador)
-    # No se vuelve a descargar — solo se busca el archivo en carpeta_cache
-    log("🖼️ Resolviendo imágenes desde caché...")
+    # Resolver imágenes — paralelo con hasta 8 workers
+    log("🖼️ Descargando imágenes en paralelo...")
     total = len(productos)
-    imagenes_paths = {}
 
+    # Primero construir el mapa de tareas: {i: [(ck, url), ...]}
+    tareas = {}
     for i, prod in enumerate(productos):
         variaciones = prod.get('variaciones', [])
         sku_key = prod.get('sku', '') or f'prod_{i}'
-
-        # Recolectar SKUs únicos por color (priorizando no-frontales)
         skus_por_color = {}
         for vi, v in enumerate(variaciones):
             color = v.get('color', 'default') or 'default'
             url   = v.get('imagenes', '')
-            vsku  = v.get('sku', '') or f'{sku_key}_v{vi}'  # fallback si SKU vacío
+            vsku  = v.get('sku', '') or f'{sku_key}_v{vi}'
             if color not in skus_por_color:
                 skus_por_color[color] = (vsku, url)
             elif _es_foto_frontal(skus_por_color[color][1]) and not _es_foto_frontal(url):
                 skus_por_color[color] = (vsku, url)
-
         if not skus_por_color:
             skus_por_color['default'] = (sku_key, prod.get('imagenes', ''))
+        tareas[i] = list(skus_por_color.items())[:2]  # máx 2 colores por producto
 
-        img_list = []
-        for j, (color, (vsku, url)) in enumerate(list(skus_por_color.items())[:2]):
-            ck = vsku if j == 0 else f'{vsku}_c{j}'
-            # Intentar caché primero; si no existe, descargar
-            cache_jpg = os.path.join(carpeta_cache, f'{ck}.jpg')
-            if os.path.exists(cache_jpg) and os.path.getsize(cache_jpg) > 1000:
-                img_list.append(cache_jpg)
-            elif url:
-                path = descargar_imagen(url, ck, prod.get('nombre', ''),
-                                        carpeta_cache, callback_log=log)
-                img_list.append(path)
-            else:
-                img_list.append(None)
+    # Función que resuelve UNA imagen (caché o descarga)
+    def _resolver(i, j, color, vsku, url):
+        ck = vsku if j == 0 else f'{vsku}_c{j}'
+        cache_jpg = os.path.join(carpeta_cache, f'{ck}.jpg')
+        if os.path.exists(cache_jpg) and os.path.getsize(cache_jpg) > 1000:
+            return (i, j, cache_jpg)
+        if url:
+            path = descargar_imagen(url, ck, productos[i].get('nombre', ''),
+                                    carpeta_cache, callback_log=log)
+            return (i, j, path)
+        return (i, j, None)
 
-        imagenes_paths[i] = img_list if img_list else [None]
+    # Lanzar todas en paralelo
+    imagenes_paths = {i: [None] for i in range(total)}
+    futures = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for i, items in tareas.items():
+            for j, (color, (vsku, url)) in enumerate(items):
+                futures.append(executor.submit(_resolver, i, j, color, vsku, url))
+        for fut in as_completed(futures):
+            try:
+                i, j, path = fut.result()
+                if j == 0:
+                    imagenes_paths[i] = [path]
+                else:
+                    imagenes_paths[i].append(path)
+            except Exception:
+                pass
+
+    log(f"🖼️ Imágenes resueltas: {sum(1 for v in imagenes_paths.values() if v[0])} / {total}")
 
     log("📄 Generando páginas PDF...")
     prog(42)
