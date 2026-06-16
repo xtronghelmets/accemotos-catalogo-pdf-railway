@@ -20,10 +20,10 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from PIL import Image as PILImage
-
+ 
 from descargador import descargar_imagen
 from lector_excel import color_hex
-
+ 
 # ── Config por marca ─────────────────────────────────────────────────────────
 MARCAS_CONFIG = {
     'xtrong': {
@@ -49,7 +49,7 @@ MARCAS_CONFIG = {
         'nombre_display':  'XECURO',
     },
 }
-
+ 
 # Portadas y contraportadas por tipo de catálogo
 ASSETS_POR_TIPO = {
     # XTRONG — nombres exactos como están en assets/xtrong/
@@ -91,7 +91,7 @@ ASSETS_POR_TIPO = {
         'pagina_bg_pro': 'PÁGINA XECURO PRO.png',
     },
 }
-
+ 
 # Logos de certificación
 # Assets de certificación — nombres exactos del repo
 CERT_ASSETS = {
@@ -106,26 +106,26 @@ CERT_ASSETS = {
         'dot':     ['ÍCONO DOT.png', 'ICONO DOT.png', 'ÍCONO_DOT.png'],
     },
 }
-
+ 
 PAGE_W, PAGE_H = 595, 1060
 HEADER_H       = 50
 TABLA_ROW_H    = 24
 TABLA_COLOR_H  = 22    # encabezado de color
-
-
+ 
+ 
 def _hx(s):
     return HexColor(s)
-
-
+ 
+ 
 # ── Header ───────────────────────────────────────────────────────────────────
-
+ 
 def _draw_header(c, cfg, categoria, logo_path=None):
     y_bot = PAGE_H - HEADER_H
-
+ 
     # Fondo principal
     c.setFillColor(_hx(cfg['color_principal']))
     c.rect(0, y_bot, PAGE_W, HEADER_H, fill=1, stroke=0)
-
+ 
     # Polígono blanco esquina derecha
     px_top = PAGE_W - 180
     px_bot = PAGE_W - 195
@@ -137,12 +137,12 @@ def _draw_header(c, cfg, categoria, logo_path=None):
     p.lineTo(px_bot, y_bot)
     p.close()
     c.drawPath(p, fill=1, stroke=0)
-
+ 
     # Línea acento
     c.setStrokeColor(_hx(cfg['color_acento']))
     c.setLineWidth(2)
     c.line(px_bot, y_bot, PAGE_W, y_bot)
-
+ 
     # Logo en polígono blanco
     logo_area_x = px_top + 6
     logo_area_w = PAGE_W - logo_area_x - 6
@@ -165,34 +165,34 @@ def _draw_header(c, cfg, categoria, logo_path=None):
             _draw_logo_texto(c, cfg, logo_area_x, PAGE_H - 4, PAGE_W - 6)
     else:
         _draw_logo_texto(c, cfg, logo_area_x, PAGE_H - 4, PAGE_W - 6)
-
+ 
     # Categoría en zona verde
     cat_text = categoria.title() if categoria.isupper() else categoria
     c.setFillColor(white)
     c.setFont(cfg['font_italic'], 16)
     c.drawString(16, y_bot + 16, cat_text)
-
-
+ 
+ 
 def _draw_logo_texto(c, cfg, x_left, y_top, x_right):
     c.setFillColor(_hx(cfg['color_principal']))
     c.setFont('Helvetica-Bold', 15)
     c.drawRightString(x_right - 6, y_top - 18, cfg['nombre_display'])
     c.setFont('Helvetica-Bold', 8)
     c.drawRightString(x_right - 6, y_top - 31, 'HELMETS & GEAR')
-
-
+ 
+ 
 # ── Zona de nombre + descripción ─────────────────────────────────────────────
-
+ 
 def _draw_nombre_zona(c, cfg, nombre, descripcion_corta='', precio=None, mostrar_precio=False):
     """Dibuja nombre del producto y resumen de descripción. Devuelve y inferior."""
     y_base = PAGE_H - HEADER_H - 12
     fs = 26 if len(nombre) < 22 else (20 if len(nombre) < 32 else 16)
-
+ 
     c.setFillColor(_hx(cfg['color_texto']))
     c.setFont(cfg['font_titulo'], fs)
     c.drawString(16, y_base - fs, nombre)
     y_cur = y_base - fs - 6
-
+ 
     if mostrar_precio and precio and precio > 0:
         try:
             pf = f"${int(float(str(precio))):,}".replace(',', '.')
@@ -202,7 +202,7 @@ def _draw_nombre_zona(c, cfg, nombre, descripcion_corta='', precio=None, mostrar
             y_cur -= 20
         except Exception:
             pass
-
+ 
     # Resumen de descripción (máx 2 líneas, ancho ~350pt)
     desc = _limpiar_html(descripcion_corta or '')
     if desc:
@@ -213,24 +213,24 @@ def _draw_nombre_zona(c, cfg, nombre, descripcion_corta='', precio=None, mostrar
         for linea in lineas:
             c.drawString(16, y_cur - 11, linea)
             y_cur -= 14
-
+ 
     return y_cur - 8
-
-
+ 
+ 
 def _limpiar_html(texto):
     texto = re.sub(r'<[^>]+>', ' ', texto)
     texto = re.sub(r'&[a-z]+;', ' ', texto)
     texto = re.sub(r'\s+', ' ', texto).strip()
     return texto
-
-
+ 
+ 
 # ── Certificación ─────────────────────────────────────────────────────────────
-
+ 
 def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     """Dibuja logo de certificación DOT/ECE en esquina superior derecha bajo logo."""
     if not tiene_dot and not tiene_ece:
         return
-
+ 
     marca = cfg.get('_marca', 'xtrong')
     cert_map = CERT_ASSETS.get(marca, CERT_ASSETS['xtrong'])
     key = 'dot_ece' if (tiene_dot and tiene_ece) else 'dot'
@@ -243,13 +243,13 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
             break
     if not cert_path:
         cert_path = ''
-
+ 
     # Posición: esquina derecha, justo bajo el header
     cert_w = 90
     cert_h = 50
     x = PAGE_W - cert_w - 12
     y = PAGE_H - HEADER_H - cert_h - 8
-
+ 
     if cert_path and os.path.exists(cert_path):
         try:
             c.drawImage(cert_path, x, y, cert_w, cert_h,
@@ -257,7 +257,7 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
             return
         except Exception:
             pass
-
+ 
     # Fallback texto
     c.setFillColor(_hx(cfg['color_principal']))
     c.setFont('Helvetica-Bold', 9)
@@ -265,18 +265,18 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     c.drawRightString(PAGE_W - 12, y + 18, 'CERTIFICACIÓN')
     c.setFont('Helvetica-Bold', 13)
     c.drawRightString(PAGE_W - 12, y + 4, label)
-
-
+ 
+ 
 # ── Imagen ────────────────────────────────────────────────────────────────────
-
+ 
 def _es_foto_frontal(url_o_path):
     """Heurística: si la URL contiene indicadores de vista frontal, es frontal."""
     nombre = (url_o_path or '').lower()
     indicadores = ['-front', '_front', '-frontal', '_frontal', '-adelante',
                    '-frente', '_frente', 'front-', 'front_']
     return any(ind in nombre for ind in indicadores)
-
-
+ 
+ 
 def _draw_imagen(c, img_path, x, y_top, w, h_max):
     y_bottom = y_top - h_max
     if not img_path or not os.path.exists(img_path):
@@ -303,10 +303,10 @@ def _draw_imagen(c, img_path, x, y_top, w, h_max):
     except Exception:
         pass
     return y_bottom
-
-
+ 
+ 
 # ── Tabla de tallas/colores ───────────────────────────────────────────────────
-
+ 
 def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None):
     """
     tallas_data: lista de (talla, codigo, inventario)
@@ -318,7 +318,7 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
     tabla_w = COL_W * (n + 1)
     x0      = (PAGE_W - tabla_w) / 2
     y_cur   = y_top
-
+ 
     # Encabezado de color (solo circulo + nombre, fondo verde)
     if color_nombre:
         y_cur -= TABLA_COLOR_H
@@ -333,7 +333,7 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
         c.setFillColor(white)
         c.setFont('Helvetica-Bold', 11)
         c.drawString(x0 + 28, y_cur + 7, color_nombre.title())
-
+ 
     # Fila TALLA
     y_cur -= TABLA_ROW_H
     c.setFillColor(_hx(cfg['color_principal']))
@@ -348,7 +348,7 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
         c.setFillColor(_hx(cfg['color_principal']))
         c.setFont('Helvetica-Bold', 9)
         c.drawCentredString(cx + COL_W / 2, y_cur + 8, str(talla or '-')[:8])
-
+ 
     # Fila CÓDIGO
     y_cur -= TABLA_ROW_H
     c.setFillColor(HexColor('#F0F0F0'))
@@ -363,7 +363,7 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
         c.setFillColor(HexColor('#333333'))
         c.setFont('Helvetica', 9)
         c.drawCentredString(cx + COL_W / 2, y_cur + 8, str(codigo or '-')[:10])
-
+ 
     # Fila INVENTARIO
     y_cur -= TABLA_ROW_H
     c.setFillColor(HexColor('#F0F0F0'))
@@ -379,24 +379,24 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
         c.setFont('Helvetica', 9)
         inv_txt = str(inv) if inv is not None else '-'
         c.drawCentredString(cx + COL_W / 2, y_cur + 8, inv_txt)
-
+ 
     # Borde exterior
     total_h = (TABLA_COLOR_H if color_nombre else 0) + TABLA_ROW_H * 3
     c.setStrokeColor(HexColor('#DDDDDD'))
     c.setLineWidth(0.5)
     c.rect(x0, y_top - total_h, tabla_w, total_h, fill=0, stroke=1)
-
-
+ 
+ 
 # ── Número de página ──────────────────────────────────────────────────────────
-
+ 
 def _draw_numero_pagina(c, num, total):
     c.setFillColor(HexColor('#AAAAAA'))
     c.setFont('Helvetica', 9)
     c.drawCentredString(PAGE_W / 2, 14, f"{num} / {total}")
-
-
+ 
+ 
 # ── Full bleed ────────────────────────────────────────────────────────────────
-
+ 
 def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
     """Acepta ImageReader pre-cargado (rápido) o None (fallback color sólido).
     NUNCA intenta abrir un archivo PNG directamente — eso cuelga ReportLab en Vercel."""
@@ -407,28 +407,47 @@ def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
             dibujado = True
         except Exception:
             pass
-
+ 
     if not dibujado:
         # Fallback: fondo negro sólido (nunca se cuelga)
         c.setFillColor(HexColor('#111111'))
         c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-
+ 
     if texto_overlay and cfg:
-        c.setFillColor(_hx(cfg['color_principal']))
-        c.setFont('Helvetica-Bold', 11)
-        c.drawRightString(PAGE_W - 14, PAGE_H - HEADER_H - 18, texto_overlay)
-
-
+        # Texto de categoría + período debajo de la palabra "CATÁLOGO" en la portada
+        # Posición: zona superior derecha, bajo el área de "CATÁLOGO"
+        # "CATÁLOGO" en la portada Xecuro está aprox a 82% del alto de página
+        y_catalogo = PAGE_H * 0.78   # justo bajo "CATÁLOGO"
+        x_right    = PAGE_W - 14
+ 
+        partes = texto_overlay.split('|')  # formato esperado: "CATEGORÍA|PERÍODO"
+        if len(partes) == 2:
+            cat_txt    = partes[0].strip()
+            periodo_txt = partes[1].strip()
+        else:
+            cat_txt    = ''
+            periodo_txt = texto_overlay.strip()
+ 
+        c.setFillColor(_hx(cfg['color_acento']) if cfg.get('color_acento') else white)
+        if cat_txt:
+            c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), 13)
+            c.drawRightString(x_right, y_catalogo, cat_txt)
+            y_catalogo -= 17
+        if periodo_txt:
+            c.setFont(cfg.get('font_body', 'Helvetica'), 11)
+            c.drawRightString(x_right, y_catalogo, periodo_txt)
+ 
+ 
 # ── Página de producto ────────────────────────────────────────────────────────
-
+ 
 def _es_pro(producto):
     """Detecta si un producto es de línea PRO por nombre o descripción."""
     texto = (producto.get('nombre','') + ' ' +
              producto.get('desc_corta','') + ' ' +
              producto.get('descripcion','')).lower()
     return bool(re.search(r'xecuro[\s\-]?pro', texto))
-
-
+ 
+ 
 def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
                      carpeta_assets, assets_tipo=None, bg_reader=None, bg_pro_reader=None):
     # Fondo: imagen de plantilla para Xecuro, blanco para Xtrong
@@ -442,7 +461,7 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         elif assets_tipo.get('pagina_bg'):
             reader_a_usar = bg_reader
             pagina_bg = os.path.join(carpeta_assets, assets_tipo['pagina_bg'])
-
+ 
     if reader_a_usar:
         try:
             c.drawImage(reader_a_usar, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
@@ -453,16 +472,16 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         # Fallback: fondo blanco — nunca intentar abrir PNG directamente (cuelga en Vercel)
         c.setFillColor(white)
         c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-
+ 
     logo_path = cfg.get('_logo_path')
-    _draw_header(c, cfg, producto['categoria'], logo_path=logo_path)
-
+    # Header/membrete eliminado — la plantilla de fondo ya incluye el diseño de marca
+ 
     # Certificación DOT/ECE
     desc_txt = producto.get('desc_corta', '') + ' ' + producto.get('descripcion', '')
     tiene_dot = 'DOT' in desc_txt.upper()
     tiene_ece = 'ECE' in desc_txt.upper()
     _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets)
-
+ 
     # Nombre + descripción
     precio = 0  # No mostrar precio en el catálogo
     desc_corta = producto.get('desc_corta', '') or producto.get('descripcion', '') or ''
@@ -472,14 +491,14 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         precio=precio,
         mostrar_precio=mostrar_precios,
     )
-
+ 
     # Imagen
     y_img_top = y_nombre_bottom - 6
     TABLE_TOP = (TABLA_COLOR_H + TABLA_ROW_H * 3) + 40
     avail = y_img_top - TABLE_TOP - 8
     img_h = max(60, avail * 0.88)
     _draw_imagen(c, img_path, 20, y_img_top, PAGE_W - 40, img_h)
-
+ 
     # Tabla por color
     from collections import OrderedDict
     variaciones = producto.get('variaciones', [])
@@ -489,7 +508,7 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         if color not in grupos_color:
             grupos_color[color] = []
         grupos_color[color].append(v)
-
+ 
     y_cur = TABLE_TOP
     for color, vars_color in grupos_color.items():
         tallas_data = []
@@ -513,12 +532,12 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
                     color_nombre=color_label,
                     color_hex_str=color_hex_str)
         y_cur -= (TABLA_COLOR_H + TABLA_ROW_H * 3 + 10)
-
+ 
     _draw_numero_pagina(c, num, total)
-
-
+ 
+ 
 # ── Función principal ─────────────────────────────────────────────────────────
-
+ 
 def generar_pdf_desde_productos(
     productos,
     ruta_salida,
@@ -536,10 +555,10 @@ def generar_pdf_desde_productos(
         if callback_log: callback_log(m)
     def prog(p):
         if callback_progreso: callback_progreso(p)
-
+ 
     cfg = dict(MARCAS_CONFIG.get(marca, MARCAS_CONFIG['xtrong']))
     cfg['_marca'] = marca
-
+ 
     # Resolver carpeta de assets — buscar en múltiples rutas posibles
     base_dir = os.path.dirname(os.path.abspath(__file__))
     marca_upper = marca.upper()  # XTRONG / XECURO
@@ -563,7 +582,7 @@ def generar_pdf_desde_productos(
     log(f"  📁 Assets existe: {os.path.isdir(carpeta_assets)}")
     if os.path.isdir(carpeta_assets):
         log(f"  📁 Archivos: {os.listdir(carpeta_assets)[:5]}")
-
+ 
     # Registrar fuentes TTF
     for font_name, font_file in [('Kanit', 'Kanit-Bold.ttf'), ('Sora', 'Sora-Regular.ttf')]:
         fp = os.path.join(carpeta_assets, font_file)
@@ -577,7 +596,7 @@ def generar_pdf_desde_productos(
                 log(f"  ✅ Fuente {font_name} cargada")
             except Exception as e:
                 log(f"  ⚠️ Fuente {font_name}: {e}")
-
+ 
     # Logo
     logo_path = None
     for fname in ('logo.png', 'logo_xtrong.png', 'logo_xecuro.png', 'LOGO.png'):
@@ -586,12 +605,12 @@ def generar_pdf_desde_productos(
             logo_path = candidate
             break
     cfg['_logo_path'] = logo_path
-
+ 
     # Portada y contraportada según tipo
     assets_tipo_dict = ASSETS_POR_TIPO.get(tipo_catalogo, {})
     portada_fname  = assets_tipo_dict.get('portada', 'PORTADA.jpg')
     contra_fname   = assets_tipo_dict.get('contraportada', 'CONTRAPORTADA.jpg')
-
+ 
     def _buscar_asset(carpeta, fname):
         """Busca asset probando guion bajo, espacios, sin tildes, distintas extensiones."""
         import unicodedata
@@ -617,10 +636,10 @@ def generar_pdf_desde_productos(
             if os.path.exists(path):
                 return path
         return os.path.join(carpeta, fname)
-
+ 
     portada_path = _buscar_asset(carpeta_assets, portada_fname)
     contra_path  = _buscar_asset(carpeta_assets, contra_fname)
-
+ 
     def _cargar_image_reader_seguro(path, nombre, timeout_seg=8):
         """Carga ImageReader con timeout. Prefiere _opt.jpg si existe."""
         if not path or not os.path.exists(path):
@@ -638,7 +657,7 @@ def generar_pdf_desde_productos(
                 pass  # fallback al proceso normal
         result = [None]
         error  = [None]
-
+ 
         def _cargar():
             try:
                 # Intentar primero con PIL para controlar el proceso
@@ -668,7 +687,7 @@ def generar_pdf_desde_productos(
                 result[0] = ImageReader(buf)
             except Exception as e:
                 error[0] = str(e)
-
+ 
         t = threading.Thread(target=_cargar, daemon=True)
         t.start()
         t.join(timeout=timeout_seg)
@@ -680,10 +699,10 @@ def generar_pdf_desde_productos(
             return None
         log(f"  ✅ {nombre} pre-cargado")
         return result[0]
-
+ 
     portada_reader = _cargar_image_reader_seguro(portada_path, "Portada")
     contra_reader  = _cargar_image_reader_seguro(contra_path,  "Contraportada")
-
+ 
     # Pre-cargar fondos de página en memoria (se reusan en cada producto)
     bg_fname     = assets_tipo_dict.get('pagina_bg')
     bg_pro_fname = assets_tipo_dict.get('pagina_bg_pro')
@@ -695,21 +714,21 @@ def generar_pdf_desde_productos(
     if bg_pro_fname:
         bg_pro_path   = _buscar_asset(carpeta_assets, bg_pro_fname)
         bg_pro_reader = _cargar_image_reader_seguro(bg_pro_path, f"Fondo PRO ({bg_pro_fname})")
-
+ 
     assets_tipo = assets_tipo_dict
     log(f"  📄 Portada: {portada_fname}")
     log(f"  📄 Contraportada: {contra_fname}")
-
+ 
     # Resolver imágenes desde caché (ya descargadas en woo_api / descargador)
     # No se vuelve a descargar — solo se busca el archivo en carpeta_cache
     log("🖼️ Resolviendo imágenes desde caché...")
     total = len(productos)
     imagenes_paths = {}
-
+ 
     for i, prod in enumerate(productos):
         variaciones = prod.get('variaciones', [])
         sku_key = prod.get('sku', '') or f'prod_{i}'
-
+ 
         # Recolectar SKUs únicos por color (priorizando no-frontales)
         skus_por_color = {}
         for vi, v in enumerate(variaciones):
@@ -720,10 +739,10 @@ def generar_pdf_desde_productos(
                 skus_por_color[color] = (vsku, url)
             elif _es_foto_frontal(skus_por_color[color][1]) and not _es_foto_frontal(url):
                 skus_por_color[color] = (vsku, url)
-
+ 
         if not skus_por_color:
             skus_por_color['default'] = (sku_key, prod.get('imagenes', ''))
-
+ 
         img_list = []
         for j, (color, (vsku, url)) in enumerate(list(skus_por_color.items())[:2]):
             ck = vsku if j == 0 else f'{vsku}_c{j}'
@@ -737,20 +756,29 @@ def generar_pdf_desde_productos(
                 img_list.append(path)
             else:
                 img_list.append(None)
-
+ 
         imagenes_paths[i] = img_list if img_list else [None]
-
+ 
     log("📄 Generando páginas PDF...")
     prog(42)
-
+ 
     c = canvas.Canvas(ruta_salida, pagesize=(PAGE_W, PAGE_H))
-
+ 
     # Portada
     log("  📄 Portada...")
-    _draw_full_bleed(c, portada_reader or portada_path, texto_overlay=periodo or None, cfg=cfg)
+    # Construir overlay: "CATEGORÍA | período" debajo de CATÁLOGO
+    overlay_portada = None
+    if tipo_catalogo or periodo:
+        partes_overlay = []
+        if tipo_catalogo:
+            partes_overlay.append(tipo_catalogo.upper())
+        if periodo:
+            partes_overlay.append(periodo)
+        overlay_portada = '|'.join(partes_overlay)
+    _draw_full_bleed(c, portada_reader or portada_path, texto_overlay=overlay_portada, cfg=cfg)
     c.showPage()
     prog(44)
-
+ 
     # Páginas de productos
     for i, prod in enumerate(productos):
         prog(44 + int(53 * i / max(total, 1)))
@@ -761,12 +789,12 @@ def generar_pdf_desde_productos(
                          i + 1, total, carpeta_assets, assets_tipo=assets_tipo,
                          bg_reader=bg_reader, bg_pro_reader=bg_pro_reader)
         c.showPage()
-
+ 
     # Contraportada
     log("  📄 Contraportada...")
     _draw_full_bleed(c, contra_reader or contra_path)
     c.showPage()
-
+ 
     log("💾 Guardando PDF...")
     c.save()
     prog(100)
