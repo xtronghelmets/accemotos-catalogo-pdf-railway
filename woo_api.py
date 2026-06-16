@@ -134,9 +134,10 @@ def obtener_productos_woo(
         except Exception:
             precio = 0.0
 
-        sku     = str(prod.get('sku', ''))
-        images  = prod.get('images', [])
-        img_url = images[0]['src'] if images else ''
+        sku        = str(prod.get('sku', ''))
+        images     = prod.get('images', [])
+        img_url    = images[0]['src'] if images else ''
+        img_extras = [img['src'] for img in images[1:5] if img.get('src')]  # hasta 4 extras
 
         # Limpiar HTML de descripciones
         import re
@@ -240,6 +241,7 @@ def obtener_productos_woo(
             'sku':           sku,
             'precio':        precio,
             'imagenes':      img_url,
+            'imagenes_extra': img_extras,
             'desc_corta':    desc_corta,
             'descripcion':   descripcion,
             'ce':            ce,

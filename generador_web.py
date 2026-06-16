@@ -430,7 +430,8 @@ def _es_pro(producto):
 
 
 def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
-                     carpeta_assets, assets_tipo=None, bg_reader=None, bg_pro_reader=None):
+                     carpeta_assets, assets_tipo=None, bg_reader=None, bg_pro_reader=None,
+                     imagenes_extra=None):
     # Fondo: imagen de plantilla para Xecuro, blanco para Xtrong
     # Usar reader pre-cargado si está disponible (evita releer disco en cada página)
     reader_a_usar = None
@@ -473,16 +474,36 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         mostrar_precio=mostrar_precios,
     )
 
-    # Imagen
+    # Determinar si aplica fila de miniaturas:
+    # productos simples o variables con exactamente 1 variación
+    variaciones = producto.get('variaciones', [])
+    mostrar_miniaturas = (
+        len(variaciones) <= 1
+        and imagenes_extra
+        and len(imagenes_extra) > 0
+    )
+
+    # Imagen principal
     y_img_top = y_nombre_bottom - 6
+    MINI_ZONA_H = 72 if mostrar_miniaturas else 0  # reservar espacio para miniaturas
     TABLE_TOP = (TABLA_COLOR_H + TABLA_ROW_H * 3) + 40
-    avail = y_img_top - TABLE_TOP - 8
+    avail = y_img_top - TABLE_TOP - MINI_ZONA_H - 8
     img_h = max(60, avail * 0.88)
     _draw_imagen(c, img_path, 20, y_img_top, PAGE_W - 40, img_h)
 
+    # Fila de miniaturas (solo si aplica)
+    if mostrar_miniaturas:
+        y_mini_top = TABLE_TOP + MINI_ZONA_H
+        mini_count = min(len(imagenes_extra), 4)
+        mini_w = (PAGE_W - 40) / 4
+        mini_h = MINI_ZONA_H - 8
+        for mi, mpath in enumerate(imagenes_extra[:4]):
+            mx = 20 + mi * mini_w
+            my = y_mini_top - mini_h
+            _draw_imagen(c, mpath, mx + 2, y_mini_top - 4, mini_w - 4, mini_h)
+
     # Tabla por color
     from collections import OrderedDict
-    variaciones = producto.get('variaciones', [])
     grupos_color = OrderedDict()
     for v in variaciones:
         color = v.get('color', '') or 'default'
@@ -705,6 +726,7 @@ def generar_pdf_desde_productos(
     log("🖼️ Resolviendo imágenes desde caché...")
     total = len(productos)
     imagenes_paths = {}
+    imagenes_extra_paths = {}
 
     for i, prod in enumerate(productos):
         variaciones = prod.get('variaciones', [])
@@ -740,6 +762,21 @@ def generar_pdf_desde_productos(
 
         imagenes_paths[i] = img_list if img_list else [None]
 
+        # Descargar imágenes extra (para fila de miniaturas en productos simples/1 variación)
+        extras_urls = prod.get('imagenes_extra', []) or []
+        extras_paths = []
+        for ei, eurl in enumerate(extras_urls[:4]):
+            eck = f'{sku_key}_extra{ei}'
+            cache_extra = os.path.join(carpeta_cache, f'{eck}.jpg')
+            if os.path.exists(cache_extra) and os.path.getsize(cache_extra) > 1000:
+                extras_paths.append(cache_extra)
+            elif eurl:
+                ep = descargar_imagen(eurl, eck, prod.get('nombre', ''),
+                                      carpeta_cache, callback_log=None)
+                if ep:
+                    extras_paths.append(ep)
+        imagenes_extra_paths[i] = extras_paths
+
     log("📄 Generando páginas PDF...")
     prog(42)
 
@@ -759,7 +796,8 @@ def generar_pdf_desde_productos(
         log(f"  📝 [{i+1}/{total}] {prod['nombre'][:45]}")
         _pagina_producto(c, cfg, prod, img_path, mostrar_precios,
                          i + 1, total, carpeta_assets, assets_tipo=assets_tipo,
-                         bg_reader=bg_reader, bg_pro_reader=bg_pro_reader)
+                         bg_reader=bg_reader, bg_pro_reader=bg_pro_reader,
+                         imagenes_extra=imagenes_extra_paths.get(i, []))
         c.showPage()
 
     # Contraportada
