@@ -227,25 +227,18 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     if not cert_path or not os.path.exists(cert_path):
         return  # Sin fallback rect — mejor no dibujar nada
 
-    # Buscar _opt.jpg primero (rápido, sin transparencia)
-    base, _ = os.path.splitext(cert_path)
-    opt_path = base + '_opt.jpg'
-    path_a_usar = opt_path if os.path.exists(opt_path) else None
-    if not path_a_usar:
-        return  # sin _opt.jpg no dibujamos nada
-
-    # Posición: zona blanca derecha, fuera del área verde
-    # La zona blanca está aprox x > 350, y entre PAGE_H-180 y PAGE_H-HEADER_H
-    cert_w = 100
-    cert_h = 55
-    x = PAGE_W - cert_w - 10
-    y = PAGE_H - HEADER_H - cert_h - 55  # en la zona blanca bajo el header
+    # Posición: debajo del header, dentro de la zona verde de la plantilla
+    cert_w = 80
+    cert_h = 44
+    x = PAGE_W - cert_w - 8
+    y = PAGE_H - HEADER_H - cert_h - 10  # 10px bajo el header
 
     try:
+        # Usar PNG directamente con ImageReader — preserva transparencia sin convertir
         result = [None]
         def _cargar_cert():
             try:
-                result[0] = ImageReader(path_a_usar)
+                result[0] = ImageReader(cert_path)
             except Exception:
                 pass
         t = threading.Thread(target=_cargar_cert, daemon=True)
@@ -253,15 +246,16 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
         t.join(timeout=6)
         if result[0] is None:
             return
-        iw, ih = result[0].getSize()
+        reader = result[0]
+        iw, ih = reader.getSize()
         ratio = iw / ih
         dh = cert_h
         dw = dh * ratio
         if dw > cert_w:
             dw = cert_w
             dh = dw / ratio
-        c.drawImage(result[0], x + (cert_w - dw)/2, y + (cert_h - dh)/2,
-                    dw, dh)
+        c.drawImage(reader, x + (cert_w - dw)/2, y + (cert_h - dh)/2,
+                    dw, dh, mask='auto')
     except Exception:
         pass
 
@@ -414,7 +408,13 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
         inv_txt = str(inv) if inv is not None else '-'
         c.drawCentredString(cx + COL_W / 2, y_cur + 8, inv_txt)
 
-    # Borde exterior eliminado — causa artefactos visuales sobre la plantilla
+    # Borde exterior — solo si está dentro de la página
+    total_h = (TABLA_COLOR_H if color_nombre else 0) + TABLA_ROW_H * 3
+    y_tabla_bottom = y_top - total_h
+    if y_tabla_bottom >= 10:
+        c.setStrokeColor(HexColor('#DDDDDD'))
+        c.setLineWidth(0.5)
+        c.rect(x0, y_tabla_bottom, tabla_w, total_h, fill=0, stroke=1)
 
 
 # ── Número de página ──────────────────────────────────────────────────────────
