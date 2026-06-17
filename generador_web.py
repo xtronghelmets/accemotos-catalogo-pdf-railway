@@ -227,28 +227,25 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     if not cert_path or not os.path.exists(cert_path):
         return  # Sin fallback rect — mejor no dibujar nada
 
-    # Posición: debajo del header, dentro de la zona verde de la plantilla
-    cert_w = 80
-    cert_h = 44
-    x = PAGE_W - cert_w - 8
-    y = PAGE_H - HEADER_H - cert_h - 10
+    # Buscar _opt.jpg primero (rápido, sin transparencia)
+    base, _ = os.path.splitext(cert_path)
+    opt_path = base + '_opt.jpg'
+    path_a_usar = opt_path if os.path.exists(opt_path) else None
+    if not path_a_usar:
+        return  # sin _opt.jpg no dibujamos nada
+
+    # Posición: zona blanca derecha, fuera del área verde
+    # La zona blanca está aprox x > 350, y entre PAGE_H-180 y PAGE_H-HEADER_H
+    cert_w = 100
+    cert_h = 55
+    x = PAGE_W - cert_w - 10
+    y = PAGE_H - HEADER_H - cert_h - 55  # en la zona blanca bajo el header
 
     try:
         result = [None]
         def _cargar_cert():
             try:
-                from io import BytesIO
-                img = PILImage.open(cert_path)
-                # Preservar transparencia — no convertir a JPEG
-                if img.mode not in ('RGBA', 'RGB'):
-                    img = img.convert('RGBA')
-                MAX = 400
-                if max(img.size) > MAX:
-                    img.thumbnail((MAX, MAX), PILImage.LANCZOS)
-                buf = BytesIO()
-                img.save(buf, 'PNG')
-                buf.seek(0)
-                result[0] = ImageReader(buf)
+                result[0] = ImageReader(path_a_usar)
             except Exception:
                 pass
         t = threading.Thread(target=_cargar_cert, daemon=True)
@@ -264,7 +261,7 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
             dw = cert_w
             dh = dw / ratio
         c.drawImage(result[0], x + (cert_w - dw)/2, y + (cert_h - dh)/2,
-                    dw, dh, mask='auto')
+                    dw, dh)
     except Exception:
         pass
 
