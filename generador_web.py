@@ -231,14 +231,24 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     cert_w = 80
     cert_h = 44
     x = PAGE_W - cert_w - 8
-    y = PAGE_H - HEADER_H - cert_h - 10  # 10px bajo el header
+    y = PAGE_H - HEADER_H - cert_h - 10
 
     try:
-        # Usar PNG directamente con ImageReader — preserva transparencia sin convertir
         result = [None]
         def _cargar_cert():
             try:
-                result[0] = ImageReader(cert_path)
+                from io import BytesIO
+                img = PILImage.open(cert_path)
+                # Preservar transparencia — no convertir a JPEG
+                if img.mode not in ('RGBA', 'RGB'):
+                    img = img.convert('RGBA')
+                MAX = 400
+                if max(img.size) > MAX:
+                    img.thumbnail((MAX, MAX), PILImage.LANCZOS)
+                buf = BytesIO()
+                img.save(buf, 'PNG')
+                buf.seek(0)
+                result[0] = ImageReader(buf)
             except Exception:
                 pass
         t = threading.Thread(target=_cargar_cert, daemon=True)
@@ -246,15 +256,14 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
         t.join(timeout=6)
         if result[0] is None:
             return
-        reader = result[0]
-        iw, ih = reader.getSize()
+        iw, ih = result[0].getSize()
         ratio = iw / ih
         dh = cert_h
         dw = dh * ratio
         if dw > cert_w:
             dw = cert_w
             dh = dw / ratio
-        c.drawImage(reader, x + (cert_w - dw)/2, y + (cert_h - dh)/2,
+        c.drawImage(result[0], x + (cert_w - dw)/2, y + (cert_h - dh)/2,
                     dw, dh, mask='auto')
     except Exception:
         pass
