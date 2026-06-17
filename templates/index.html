@@ -8,6 +8,28 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;700&family=Sora:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/style.css" />
+  <style>
+    .periodo-alerta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: #fff5f5;
+      border: 1px solid #feb2b2;
+      border-radius: 8px;
+      color: #c53030;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .periodo-alerta svg { flex-shrink: 0; }
+    .periodo-alerta.hidden { display: none; }
+    .btn-gen:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+  </style>
 </head>
 <body>
 
@@ -47,9 +69,13 @@
 
     <!-- PERÍODO -->
     <section class="card">
-      <div class="sec-label">Período</div>
+      <div class="sec-label">Período <span style="color:#e53e3e;">*</span></div>
       <div class="field">
         <input class="field-input" id="periodo" type="text" placeholder="Ej: Junio 2025 · Semana 1" />
+        <div class="periodo-alerta" id="periodo-alerta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          El período es obligatorio para generar el catálogo
+        </div>
       </div>
     </section>
 
@@ -93,5 +119,22 @@
   </main>
 
   <script src="/static/js/app.js"></script>
+  <script>
+    (function () {
+      const periodoInput = document.getElementById('periodo');
+      const alerta       = document.getElementById('periodo-alerta');
+      const btnGen       = document.getElementById('btn-gen');
+
+      function actualizarEstado() {
+        const vacio = periodoInput.value.trim() === '';
+        alerta.classList.toggle('hidden', !vacio);
+        btnGen.disabled = vacio;
+      }
+
+      // Estado inicial — botón deshabilitado hasta que escriban
+      actualizarEstado();
+      periodoInput.addEventListener('input', actualizarEstado);
+    })();
+  </script>
 </body>
 </html>
