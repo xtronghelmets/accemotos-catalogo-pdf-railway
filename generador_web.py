@@ -227,18 +227,27 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     if not cert_path or not os.path.exists(cert_path):
         return  # Sin fallback rect — mejor no dibujar nada
 
-    # Posición: dentro de la zona verde del membrete, esquina inferior derecha
-    # La zona verde ocupa aprox desde x=400 hasta PAGE_W, y desde PAGE_H-HEADER_H hasta PAGE_H
-    # Ponemos la cert en la parte inferior de esa zona verde
+    # Posición: debajo del header, dentro de la zona verde de la plantilla
     cert_w = 80
     cert_h = 44
     x = PAGE_W - cert_w - 8
-    y = PAGE_H - HEADER_H - cert_h + 2  # dentro del header verde
+    y = PAGE_H - HEADER_H - cert_h - 10  # 10px bajo el header
 
     try:
-        reader, iw, ih = _img_a_reader(cert_path)
-        if reader is None:
+        # Usar PNG directamente con ImageReader — preserva transparencia sin convertir
+        result = [None]
+        def _cargar_cert():
+            try:
+                result[0] = ImageReader(cert_path)
+            except Exception:
+                pass
+        t = threading.Thread(target=_cargar_cert, daemon=True)
+        t.start()
+        t.join(timeout=6)
+        if result[0] is None:
             return
+        reader = result[0]
+        iw, ih = reader.getSize()
         ratio = iw / ih
         dh = cert_h
         dw = dh * ratio
