@@ -186,35 +186,14 @@ def _draw_logo_texto(c, cfg, x_left, y_top, x_right):
 # ── Zona de nombre + descripción ─────────────────────────────────────────────
 
 def _draw_nombre_zona(c, cfg, nombre, descripcion_corta='', precio=None, mostrar_precio=False):
-    """Dibuja nombre del producto y resumen de descripción. Devuelve y inferior."""
-    y_base = PAGE_H - HEADER_H - 12
+    """Dibuja nombre del producto en blanco, sin subtítulo. Devuelve y inferior."""
+    y_base = PAGE_H - HEADER_H - 12 + 50   # +50px hacia arriba
     fs = 26 if len(nombre) < 22 else (20 if len(nombre) < 32 else 16)
 
-    c.setFillColor(_hx(cfg['color_texto']))
+    c.setFillColor(white)
     c.setFont(cfg['font_titulo'], fs)
     c.drawString(16, y_base - fs, nombre)
     y_cur = y_base - fs - 6
-
-    if mostrar_precio and precio and precio > 0:
-        try:
-            pf = f"${int(float(str(precio))):,}".replace(',', '.')
-            c.setFillColor(_hx(cfg['color_precio']))
-            c.setFont('Helvetica-Bold', 13)
-            c.drawString(16, y_cur - 13, pf)
-            y_cur -= 20
-        except Exception:
-            pass
-
-    # Resumen de descripción (máx 2 líneas, ancho ~350pt)
-    desc = _limpiar_html(descripcion_corta or '')
-    if desc:
-        desc_corta = desc[:180]
-        lineas = textwrap.wrap(desc_corta, width=62)[:2]
-        c.setFillColor(HexColor('#555555'))
-        c.setFont('Helvetica', 10)
-        for linea in lineas:
-            c.drawString(16, y_cur - 11, linea)
-            y_cur -= 14
 
     return y_cur - 8
 
