@@ -209,7 +209,7 @@ def _limpiar_html(texto):
 # ── Certificación ─────────────────────────────────────────────────────────────
 
 def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
-    """Dibuja logo de certificación DOT/ECE dentro de la zona verde del membrete."""
+    """Dibuja logo de certificación DOT/ECE usando _opt.jpg (rápido, sin cuelgue)."""
     if not tiene_dot and not tiene_ece:
         return
 
@@ -217,36 +217,35 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     cert_map = CERT_ASSETS.get(marca, CERT_ASSETS['xtrong'])
     key = 'dot_ece' if (tiene_dot and tiene_ece) else 'dot'
     fnames = cert_map.get(key, [])
-    cert_path = None
+
+    # Buscar _opt.jpg primero, luego PNG original
+    opt_path = None
     for fname in fnames:
-        candidate = os.path.join(carpeta_assets, fname)
-        if os.path.exists(candidate):
-            cert_path = candidate
+        base = os.path.splitext(fname)[0]
+        candidate_opt = os.path.join(carpeta_assets, base + '_opt.jpg')
+        candidate_png = os.path.join(carpeta_assets, fname)
+        if os.path.exists(candidate_opt):
+            opt_path = candidate_opt
+            break
+        elif os.path.exists(candidate_png):
+            opt_path = candidate_png
             break
 
-    if not cert_path or not os.path.exists(cert_path):
-        return  # Sin fallback rect — mejor no dibujar nada
+    if not opt_path:
+        return
 
-    # Posición: debajo del header, dentro de la zona verde de la plantilla
-    cert_w = 80
-    cert_h = 44
-    x = PAGE_W - cert_w - 8
-    y = PAGE_H - HEADER_H - cert_h - 10  # 10px bajo el header
+    # Solo usar _opt.jpg (JPEG) — nunca PNG directo (cuelga ReportLab)
+    if opt_path.lower().endswith('.png'):
+        return  # Sin _opt.jpg disponible, no dibujar nada
+
+    # Posición: zona blanca derecha, bajo el área verde
+    cert_w = 100
+    cert_h = 55
+    x = PAGE_W - cert_w - 10
+    y = PAGE_H - HEADER_H - cert_h - 55
 
     try:
-        # Usar PNG directamente con ImageReader — preserva transparencia sin convertir
-        result = [None]
-        def _cargar_cert():
-            try:
-                result[0] = ImageReader(cert_path)
-            except Exception:
-                pass
-        t = threading.Thread(target=_cargar_cert, daemon=True)
-        t.start()
-        t.join(timeout=6)
-        if result[0] is None:
-            return
-        reader = result[0]
+        reader = ImageReader(opt_path)
         iw, ih = reader.getSize()
         ratio = iw / ih
         dh = cert_h
@@ -254,8 +253,7 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
         if dw > cert_w:
             dw = cert_w
             dh = dw / ratio
-        c.drawImage(reader, x + (cert_w - dw)/2, y + (cert_h - dh)/2,
-                    dw, dh, mask='auto')
+        c.drawImage(reader, x + (cert_w - dw)/2, y + (cert_h - dh)/2, dw, dh)
     except Exception:
         pass
 
