@@ -408,13 +408,7 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
         inv_txt = str(inv) if inv is not None else '-'
         c.drawCentredString(cx + COL_W / 2, y_cur + 8, inv_txt)
 
-    # Borde exterior — solo si está dentro de la página
-    total_h = (TABLA_COLOR_H if color_nombre else 0) + TABLA_ROW_H * 3
-    y_tabla_bottom = y_top - total_h
-    if y_tabla_bottom >= 10:
-        c.setStrokeColor(HexColor('#DDDDDD'))
-        c.setLineWidth(0.5)
-        c.rect(x0, y_tabla_bottom, tabla_w, total_h, fill=0, stroke=1)
+    # Borde exterior eliminado — causa artefactos visuales sobre la plantilla
 
 
 # ── Número de página ──────────────────────────────────────────────────────────
