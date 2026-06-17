@@ -451,20 +451,31 @@ def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
         c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
 
     if texto_overlay and cfg:
-        # Texto debajo de "CATÁLOGO" en la portada: categoría arriba, período abajo
-        y_base  = PAGE_H * 0.78
-        x_right = PAGE_W - 14
-        partes  = texto_overlay.split('|')
+        partes      = texto_overlay.split('|')
         cat_txt     = partes[0].strip() if len(partes) == 2 else ''
         periodo_txt = partes[1].strip() if len(partes) == 2 else texto_overlay.strip()
-        c.setFillColor(_hx(cfg['color_acento']))
-        if cat_txt:
-            c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), 13)
-            c.drawRightString(x_right, y_base, cat_txt)
-            y_base -= 17
-        if periodo_txt:
-            c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
-            c.drawRightString(x_right, y_base, periodo_txt)
+        marca       = cfg.get('_marca', 'xtrong')
+
+        if marca == 'xtrong':
+            # Solo período, en negro, en el área blanca debajo del logo (esquina superior derecha)
+            if periodo_txt:
+                y_periodo = PAGE_H * 0.815   # justo bajo el logo en el área blanca
+                x_right   = PAGE_W - 20
+                c.setFillColor(HexColor('#000000'))
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
+                c.drawRightString(x_right, y_periodo, periodo_txt)
+        else:
+            # Comportamiento original para xecuro y otras marcas
+            y_base  = PAGE_H * 0.78
+            x_right = PAGE_W - 14
+            c.setFillColor(_hx(cfg['color_acento']))
+            if cat_txt:
+                c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), 13)
+                c.drawRightString(x_right, y_base, cat_txt)
+                y_base -= 17
+            if periodo_txt:
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
+                c.drawRightString(x_right, y_base, periodo_txt)
 
 
 # ── Página de producto ────────────────────────────────────────────────────────
