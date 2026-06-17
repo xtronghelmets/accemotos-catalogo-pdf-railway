@@ -524,7 +524,7 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
     )
 
     # Imagen
-    y_img_top = y_nombre_bottom - 46
+    y_img_top = y_nombre_bottom - 166
     TABLE_TOP = (TABLA_COLOR_H + TABLA_ROW_H * 3) + 40
     avail = y_img_top - TABLE_TOP - 8
     img_h = max(60, avail * 0.72)  # reducido de 0.88 a 0.72
