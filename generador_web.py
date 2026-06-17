@@ -459,7 +459,7 @@ def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
         if marca == 'xtrong':
             # Solo período, en negro, en el área blanca debajo del logo (esquina superior derecha)
             if periodo_txt:
-                y_periodo = PAGE_H * 0.815 + 110
+                y_periodo = PAGE_H * 0.815 + 90
                 x_right   = PAGE_W - 20
                 c.setFillColor(HexColor('#000000'))
                 c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
