@@ -46,8 +46,7 @@ def _build_marcas():
 MARCAS = _build_marcas()
 
 # ── Helpers de estado en /tmp ─────────────────────────────────────────────
-# Railway tiene /tmp persistente en la sesión; usamos variable de entorno para override
-TMP = os.environ.get('JOB_DIR', '/tmp/catalogo_jobs')
+TMP = '/tmp/catalogo_jobs'
 
 def _job_path(job_id):
     os.makedirs(TMP, exist_ok=True)
@@ -169,6 +168,8 @@ def _ejecutar_generacion(job_id, marca_key, data):
         titulo_catalogo   = data.get('titulo', '').strip()
         tipo_catalogo     = data.get('tipo_catalogo', '').strip()
         periodo           = data.get('periodo', '').strip()
+        if not periodo:
+            raise ValueError("El período es obligatorio. Ej: Junio 2025 · Semana 1")
 
         log(f"🔗 Conectando a API {m['nombre']}...")
         progreso(5)
@@ -187,8 +188,7 @@ def _ejecutar_generacion(job_id, marca_key, data):
         log(f"✅ {len(productos)} productos listos para generar")
         progreso(65)
 
-        carpeta_cache  = os.environ.get('CACHE_DIR', f'/tmp/cache_imagenes/{marca_key}')
-        carpeta_cache  = os.path.join(carpeta_cache, marca_key) if not carpeta_cache.endswith(marca_key) else carpeta_cache
+        carpeta_cache  = f'/tmp/cache_imagenes/{marca_key}'
         os.makedirs(carpeta_cache, exist_ok=True)
         # Buscar assets en múltiples rutas posibles (Vercel vs local)
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -214,8 +214,7 @@ def _ejecutar_generacion(job_id, marca_key, data):
         periodo_slug = periodo.replace(' ', '_').replace('/', '-') if periodo else ''
         fecha_slug   = ahora.strftime('%Y%m%d-%H%M')
         nombre_pdf   = f"Catalogo{m['nombre']}_{titulo_slug}_{periodo_slug}_{fecha_slug}.pdf"
-        pdf_dir  = os.environ.get('PDF_DIR', '/tmp')
-        ruta_pdf = os.path.join(pdf_dir, nombre_pdf)
+        ruta_pdf     = f'/tmp/{nombre_pdf}'
 
         from generador_web import generar_pdf_desde_productos
         generar_pdf_desde_productos(
