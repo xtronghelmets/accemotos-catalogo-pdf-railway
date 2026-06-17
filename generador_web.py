@@ -238,11 +238,11 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
     if opt_path.lower().endswith('.png'):
         return  # Sin _opt.jpg disponible, no dibujar nada
 
-    # Espacio blanco bajo la zona verde de la plantilla
-    cert_w = 110
-    cert_h = 60
-    x = PAGE_W - cert_w - 15
-    y = PAGE_H - HEADER_H - cert_h - 130        # más abajo, en zona blanca
+    # Zona superior izquierda, bajo el nombre del producto (área verde)
+    cert_w = 90
+    cert_h = 50
+    x = 16
+    y = PAGE_H - HEADER_H - cert_h - 45
 
     try:
         reader = ImageReader(opt_path)
