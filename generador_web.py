@@ -189,6 +189,7 @@ def _draw_nombre_zona(c, cfg, nombre, descripcion_corta='', precio=None, mostrar
     """Dibuja nombre del producto en blanco, sin subtítulo. Devuelve y inferior."""
     y_base = PAGE_H - HEADER_H - 12 + 50   # +50px hacia arriba
     fs = 26 if len(nombre) < 22 else (20 if len(nombre) < 32 else 16)
+    fs = int(fs * 0.7)
 
     c.setFillColor(white)
     c.setFont(cfg['font_titulo'], fs)
