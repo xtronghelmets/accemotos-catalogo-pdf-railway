@@ -209,7 +209,7 @@ def _limpiar_html(texto):
 # ── Certificación ─────────────────────────────────────────────────────────────
 
 def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
-    """Dibuja logo de certificación DOT/ECE en esquina superior derecha bajo logo."""
+    """Dibuja logo de certificación DOT/ECE dentro de la zona verde del membrete."""
     if not tiene_dot and not tiene_ece:
         return
 
@@ -223,30 +223,32 @@ def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
         if os.path.exists(candidate):
             cert_path = candidate
             break
-    if not cert_path:
-        cert_path = ''
 
-    # Posición: esquina derecha, justo bajo el header
-    cert_w = 90
-    cert_h = 50
-    x = PAGE_W - cert_w - 12
-    y = PAGE_H - HEADER_H - cert_h - 8
+    if not cert_path or not os.path.exists(cert_path):
+        return  # Sin fallback rect — mejor no dibujar nada
 
-    if cert_path and os.path.exists(cert_path):
-        try:
-            c.drawImage(cert_path, x, y, cert_w, cert_h,
-                        mask='auto', preserveAspectRatio=True)
+    # Posición: dentro de la zona verde del membrete, esquina inferior derecha
+    # La zona verde ocupa aprox desde x=400 hasta PAGE_W, y desde PAGE_H-HEADER_H hasta PAGE_H
+    # Ponemos la cert en la parte inferior de esa zona verde
+    cert_w = 80
+    cert_h = 44
+    x = PAGE_W - cert_w - 8
+    y = PAGE_H - HEADER_H - cert_h + 2  # dentro del header verde
+
+    try:
+        reader, iw, ih = _img_a_reader(cert_path)
+        if reader is None:
             return
-        except Exception:
-            pass
-
-    # Fallback texto
-    c.setFillColor(_hx(cfg['color_principal']))
-    c.setFont('Helvetica-Bold', 9)
-    label = 'DOT + ECE' if (tiene_dot and tiene_ece) else 'DOT'
-    c.drawRightString(PAGE_W - 12, y + 18, 'CERTIFICACIÓN')
-    c.setFont('Helvetica-Bold', 13)
-    c.drawRightString(PAGE_W - 12, y + 4, label)
+        ratio = iw / ih
+        dh = cert_h
+        dw = dh * ratio
+        if dw > cert_w:
+            dw = cert_w
+            dh = dw / ratio
+        c.drawImage(reader, x + (cert_w - dw)/2, y + (cert_h - dh)/2,
+                    dw, dh, mask='auto')
+    except Exception:
+        pass
 
 
 # ── Imagen ────────────────────────────────────────────────────────────────────
