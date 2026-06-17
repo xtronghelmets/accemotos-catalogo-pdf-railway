@@ -187,7 +187,7 @@ def _draw_logo_texto(c, cfg, x_left, y_top, x_right):
 
 def _draw_nombre_zona(c, cfg, nombre, descripcion_corta='', precio=None, mostrar_precio=False):
     """Dibuja nombre del producto en blanco, sin subtítulo. Devuelve y inferior."""
-    y_base = PAGE_H - HEADER_H - 12 + 50   # +50px hacia arriba
+    y_base = PAGE_H - HEADER_H - 12 + 40   # +40px hacia arriba
     fs = 26 if len(nombre) < 22 else (20 if len(nombre) < 32 else 16)
     fs = int(fs * 0.7)
 
