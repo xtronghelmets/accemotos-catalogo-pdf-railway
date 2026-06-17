@@ -527,8 +527,11 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
     y_img_top = y_nombre_bottom - 6
     TABLE_TOP = (TABLA_COLOR_H + TABLA_ROW_H * 3) + 40
     avail = y_img_top - TABLE_TOP - 8
-    img_h = max(60, avail * 0.88)
-    _draw_imagen(c, img_path, 20, y_img_top, PAGE_W - 40, img_h)
+    img_h = max(60, avail * 0.72)  # reducido de 0.88 a 0.72
+    # Centrar con más margen lateral
+    img_x = 40
+    img_w = PAGE_W - 80
+    _draw_imagen(c, img_path, img_x, y_img_top, img_w, img_h)
 
     # Tabla por color
     from collections import OrderedDict
