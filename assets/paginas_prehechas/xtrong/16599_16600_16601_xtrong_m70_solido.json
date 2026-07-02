@@ -1,0 +1,29 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG M70 SÓLIDO",
+  "header": "CASCO INTEGRAL CERTIFICACIÓN XTRONG M70 ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.06.11.pdf",
+  "pagina": 43,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16600": {
+      "x": 564.8,
+      "y": 70.7
+    },
+    "16599": {
+      "x": 489.4,
+      "y": 70.7
+    },
+    "16601": {
+      "x": 640.4,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-702",
+  "skus_faltantes": [
+    "16000"
+  ]
+}

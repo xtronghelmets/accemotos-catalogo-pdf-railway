@@ -1,0 +1,31 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "CASCO ABATIBLE XTRONG 918 SÓLIDO",
+  "header": "CASCO ABATIBLE DOBLE CERTIFICACIÓN XTRONG 918 ECE DOT",
+  "pdf_origen": "CATALOGO_ABIERTO_XTRONG_2026.01.30.pdf",
+  "pagina": 2,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17281": {
+      "x": 297.9,
+      "y": 562.8
+    },
+    "17282": {
+      "x": 372.5,
+      "y": 562.8
+    },
+    "17283": {
+      "x": 447.1,
+      "y": 562.8
+    },
+    "17284": {
+      "x": 521.7,
+      "y": 562.8
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-600",
+  "skus_faltantes": []
+}

@@ -1,0 +1,31 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "IMPERMEABLE XR 2322 MATERIAL EN PVC",
+  "header": "IMPERMEABLE XR 2322",
+  "pdf_origen": "CATALOGO_XECURO_2026.03.07.pdf",
+  "pagina": 76,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17480": {
+      "x": 376.9,
+      "y": 84.0
+    },
+    "17481": {
+      "x": 452.4,
+      "y": 84.0
+    },
+    "17482": {
+      "x": 527.9,
+      "y": 84.0
+    },
+    "17479": {
+      "x": 301.4,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-081",
+  "skus_faltantes": []
+}

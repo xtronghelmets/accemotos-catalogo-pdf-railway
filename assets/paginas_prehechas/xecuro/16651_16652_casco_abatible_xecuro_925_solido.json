@@ -1,0 +1,23 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO ABATIBLE XECURO 925 SÓLIDO",
+  "header": "CASCO ABATIBLE XECURO 925",
+  "pdf_origen": "CATALOGO_XECURO_2026.06.11.pdf",
+  "pagina": 43,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16651": {
+      "x": 552.1,
+      "y": 84.3
+    },
+    "16652": {
+      "x": 627.5,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-250",
+  "skus_faltantes": []
+}

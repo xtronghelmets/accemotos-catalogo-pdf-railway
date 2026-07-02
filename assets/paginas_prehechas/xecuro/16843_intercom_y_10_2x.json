@@ -1,0 +1,19 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "INTERCOM Y 10 2X",
+  "header": "INTERCOM Y 10 2X",
+  "pdf_origen": "CATALOGO_XECURO_2026.06.11.pdf",
+  "pagina": 69,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16843": {
+      "x": 643.2,
+      "y": 1122.4
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-801",
+  "skus_faltantes": []
+}

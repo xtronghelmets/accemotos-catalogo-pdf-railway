@@ -1,0 +1,31 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "NEXT GEN",
+  "header": "CASCO INTEGRAL DOBLE CERTIFICACIÓN XTRONG M70 ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.06.11.pdf",
+  "pagina": 51,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17443": {
+      "x": 560.3,
+      "y": 70.7
+    },
+    "17444": {
+      "x": 635.9,
+      "y": 70.7
+    },
+    "17442": {
+      "x": 484.8,
+      "y": 70.7
+    },
+    "17441": {
+      "x": 409.3,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-691",
+  "skus_faltantes": []
+}

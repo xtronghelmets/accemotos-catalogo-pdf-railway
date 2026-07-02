@@ -1,0 +1,17 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "BANANA",
+  "header": "CASCO INFANTIL INTEGRAL CERTIFICACIÓN XTRONG 002 DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.02.27.pdf",
+  "pagina": 100,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17231": {
+      "x": 410.0,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null
+}

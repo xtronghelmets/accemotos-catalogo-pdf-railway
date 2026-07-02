@@ -1,0 +1,17 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO ABIERTO XECURO 537 SÓLIDO",
+  "header": "CASCO ABIERTO XECURO 537",
+  "pdf_origen": "CATALOGO_XECURO_2026.05.06.pdf",
+  "pagina": 73,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "11423": {
+      "x": 418.4,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null
+}

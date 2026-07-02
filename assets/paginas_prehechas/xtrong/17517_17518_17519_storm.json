@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "STORM",
+  "header": "CASCO ABATIBLE CERTIFICACIÓN XTRONG  PHANTOM ECE DOT",
+  "pdf_origen": "CATALOGO_ABIERTO_XTRONG_2026.06.11.pdf",
+  "pagina": 10,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17519": {
+      "x": 615.1,
+      "y": 70.7
+    },
+    "17517": {
+      "x": 464.0,
+      "y": 70.7
+    },
+    "17518": {
+      "x": 539.6,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-742",
+  "skus_faltantes": []
+}

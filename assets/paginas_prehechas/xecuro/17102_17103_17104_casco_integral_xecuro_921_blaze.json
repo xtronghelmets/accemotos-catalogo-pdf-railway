@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO INTEGRAL XECURO 921 BLAZE",
+  "header": "CASCO INTEGRAL XECURO 921",
+  "pdf_origen": "CATALOGO_XECURO_2026.05.06.pdf",
+  "pagina": 37,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17104": {
+      "x": 493.5,
+      "y": 84.3
+    },
+    "17103": {
+      "x": 418.0,
+      "y": 84.3
+    },
+    "17102": {
+      "x": 342.5,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-203",
+  "skus_faltantes": []
+}

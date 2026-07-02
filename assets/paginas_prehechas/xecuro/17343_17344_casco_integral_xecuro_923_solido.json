@@ -1,0 +1,23 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO INTEGRAL XECURO 923 SÓLIDO",
+  "header": "CASCO INTEGRAL XECURO 923",
+  "pdf_origen": "CATALOGO_XECURO_2026.06.11.pdf",
+  "pagina": 39,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17344": {
+      "x": 625.3,
+      "y": 84.3
+    },
+    "17343": {
+      "x": 549.8,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-226",
+  "skus_faltantes": []
+}

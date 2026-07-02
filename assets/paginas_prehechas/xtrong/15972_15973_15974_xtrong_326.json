@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG 326",
+  "header": "CASCO INTEGRAL CERTIFICACIÓN XTRONG 326 ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.01.30.pdf",
+  "pagina": 63,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "15973": {
+      "x": 409.9,
+      "y": 563.0
+    },
+    "15974": {
+      "x": 485.4,
+      "y": 563.0
+    },
+    "15972": {
+      "x": 334.4,
+      "y": 563.0
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-361",
+  "skus_faltantes": []
+}

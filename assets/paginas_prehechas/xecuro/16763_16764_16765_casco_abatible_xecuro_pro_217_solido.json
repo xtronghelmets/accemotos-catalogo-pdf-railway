@@ -1,0 +1,25 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO ABATIBLE XECURO PRO 217 SÓLIDO",
+  "header": "CASCO ABATIBLE XECURO PRO 217",
+  "pdf_origen": "CATALOGO_XECURO_2026.01.05.pdf",
+  "pagina": 2,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16763": {
+      "x": 305.1,
+      "y": 487.8
+    },
+    "16764": {
+      "x": 380.6,
+      "y": 487.8
+    },
+    "16765": {
+      "x": 456.1,
+      "y": 487.8
+    }
+  },
+  "inventario_y": null
+}

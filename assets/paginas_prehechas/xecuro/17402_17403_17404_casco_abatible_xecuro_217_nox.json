@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO ABATIBLE XECURO 217 NOX",
+  "header": "CASCO ABATIBLE XECURO 217",
+  "pdf_origen": "CATALOGO_XECURO_2026.05.20.pdf",
+  "pagina": 12,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17402": {
+      "x": 471.7,
+      "y": 71.2
+    },
+    "17403": {
+      "x": 547.2,
+      "y": 71.2
+    },
+    "17404": {
+      "x": 622.7,
+      "y": 71.2
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-067",
+  "skus_faltantes": []
+}

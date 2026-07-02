@@ -1,0 +1,19 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG OP15 SÓLIDO",
+  "header": "CASCO ABIERTO CERTIFICACIÓN XTRONG OP15 DOT",
+  "pdf_origen": "CATALOGO_ABIERTO_XTRONG_2026.02.27.pdf",
+  "pagina": 21,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "15632": {
+      "x": 409.4,
+      "y": 108.5
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-714",
+  "skus_faltantes": []
+}

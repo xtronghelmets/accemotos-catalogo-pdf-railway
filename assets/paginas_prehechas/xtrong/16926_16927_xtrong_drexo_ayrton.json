@@ -1,0 +1,23 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG DREXO AYRTON",
+  "header": "CASCO INTEGRAL CERTIFICACIÓN XTRONG DREXO ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.03.07.pdf",
+  "pagina": 11,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16926": {
+      "x": 371.8,
+      "y": 70.7
+    },
+    "16927": {
+      "x": 447.2,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-622",
+  "skus_faltantes": []
+}

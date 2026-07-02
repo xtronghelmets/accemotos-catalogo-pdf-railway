@@ -1,0 +1,19 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO ABATIBLE XECURO PRO 901 SÓLIDO",
+  "header": "CASCO ABATIBLE XECURO PRO 901",
+  "pdf_origen": "CATALOGO_XECURO_2026.03.16.pdf",
+  "pagina": 11,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16554": {
+      "x": 418.4,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-137",
+  "skus_faltantes": []
+}

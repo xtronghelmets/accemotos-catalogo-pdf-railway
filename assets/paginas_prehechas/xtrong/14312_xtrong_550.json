@@ -1,0 +1,21 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG 550",
+  "header": "GUANTES Certiﬁcación XTRONG 550",
+  "pdf_origen": "CATALOGO_TEXTILES y ACCESORIOS_XTRONG_2026.05.06.pdf",
+  "pagina": 17,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "14312": {
+      "x": 445.6,
+      "y": 138.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-464",
+  "skus_faltantes": [
+    "14313"
+  ]
+}

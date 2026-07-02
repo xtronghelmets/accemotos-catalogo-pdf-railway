@@ -1,0 +1,25 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG 902 FLY",
+  "header": "CASCO MULTIPROPÓSITO CERTIFICACIÓN XTRONG 902 ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.05.20.pdf",
+  "pagina": 68,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16951": {
+      "x": 613.2,
+      "y": 70.7
+    },
+    "16950": {
+      "x": 537.7,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-557",
+  "skus_faltantes": [
+    "16952"
+  ]
+}

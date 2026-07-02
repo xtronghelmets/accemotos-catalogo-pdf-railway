@@ -1,0 +1,25 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "RACECRAFT",
+  "header": "CASCO INTEGRAL DOBLE CERTIFICACIÓN XTRONG RANGER ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.06.11.pdf",
+  "pagina": 58,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17807": {
+      "x": 540.7,
+      "y": 70.7
+    },
+    "17808": {
+      "x": 616.3,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-763",
+  "skus_faltantes": [
+    "17806"
+  ]
+}

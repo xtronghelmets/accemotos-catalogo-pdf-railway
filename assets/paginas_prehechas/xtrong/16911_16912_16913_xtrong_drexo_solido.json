@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG DREXO SÓLIDO",
+  "header": "CASCO INTEGRAL CERTIFICACIÓN XTRONG DREXO ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.03.16.pdf",
+  "pagina": 5,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16911": {
+      "x": 334.0,
+      "y": 70.7
+    },
+    "16912": {
+      "x": 409.4,
+      "y": 70.7
+    },
+    "16913": {
+      "x": 485.0,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-626",
+  "skus_faltantes": []
+}

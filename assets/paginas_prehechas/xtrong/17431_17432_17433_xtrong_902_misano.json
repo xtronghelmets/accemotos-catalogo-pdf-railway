@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG 902 MISANO",
+  "header": "CASCO MULTIPROPÓSITO CERTIFICACIÓN XTRONG 902 ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.06.11.pdf",
+  "pagina": 80,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17432": {
+      "x": 536.3,
+      "y": 70.7
+    },
+    "17433": {
+      "x": 611.8,
+      "y": 70.7
+    },
+    "17431": {
+      "x": 460.8,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-573",
+  "skus_faltantes": []
+}

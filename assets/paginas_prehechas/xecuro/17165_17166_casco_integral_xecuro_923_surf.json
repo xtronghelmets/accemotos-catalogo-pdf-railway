@@ -1,0 +1,21 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO INTEGRAL XECURO 923 SURF",
+  "header": "CASCO INTEGRAL XECURO 923",
+  "pdf_origen": "CATALOGO_XECURO_2026.01.05.pdf",
+  "pagina": 30,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17165": {
+      "x": 380.6,
+      "y": 487.8
+    },
+    "17166": {
+      "x": 456.1,
+      "y": 487.8
+    }
+  },
+  "inventario_y": null
+}

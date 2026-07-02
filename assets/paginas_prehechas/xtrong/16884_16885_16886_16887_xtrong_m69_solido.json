@@ -1,0 +1,31 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG M69 SÓLIDO",
+  "header": "CASCO INTEGRAL CERTIFICACIÓN XTRONG M69 ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.04.17.pdf",
+  "pagina": 55,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16887": {
+      "x": 523.3,
+      "y": 70.7
+    },
+    "16885": {
+      "x": 372.3,
+      "y": 70.7
+    },
+    "16884": {
+      "x": 296.8,
+      "y": 70.7
+    },
+    "16886": {
+      "x": 447.9,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-646",
+  "skus_faltantes": []
+}

@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO INTEGRAL XECURO 918",
+  "header": "CASCO INTEGRAL XECURO 918",
+  "pdf_origen": "CATALOGO_XECURO_2026.03.16.pdf",
+  "pagina": 22,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "17258": {
+      "x": 342.9,
+      "y": 84.3
+    },
+    "17260": {
+      "x": 493.9,
+      "y": 84.3
+    },
+    "17259": {
+      "x": 418.4,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-168",
+  "skus_faltantes": []
+}

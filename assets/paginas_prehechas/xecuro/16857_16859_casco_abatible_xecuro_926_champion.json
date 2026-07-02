@@ -1,0 +1,25 @@
+{
+  "tipo": "producto",
+  "marca": "xecuro",
+  "titulo": "CASCO ABATIBLE XECURO 926 CHAMPION",
+  "header": "CASCO ABATIBLE XECURO 926",
+  "pdf_origen": "CATALOGO_XECURO_2026.03.16.pdf",
+  "pagina": 65,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16857": {
+      "x": 380.6,
+      "y": 84.3
+    },
+    "16859": {
+      "x": 456.1,
+      "y": 84.3
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-298",
+  "skus_faltantes": [
+    "16858"
+  ]
+}

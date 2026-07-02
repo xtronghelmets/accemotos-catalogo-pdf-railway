@@ -1,0 +1,27 @@
+{
+  "tipo": "producto",
+  "marca": "xtrong",
+  "titulo": "XTRONG M70 SPRINT",
+  "header": "CASCO INTEGRAL CERTIFICACIÓN XTRONG M70 ECE DOT",
+  "pdf_origen": "CATALOGO_INTEGRAL_XTRONG_2026.05.06.pdf",
+  "pagina": 66,
+  "page_w": 720.0,
+  "page_h": 1280.0,
+  "skus": {
+    "16879": {
+      "x": 485.3,
+      "y": 70.7
+    },
+    "16877": {
+      "x": 334.3,
+      "y": 70.7
+    },
+    "16878": {
+      "x": 409.9,
+      "y": 70.7
+    }
+  },
+  "inventario_y": null,
+  "grupo_foto": "G-697",
+  "skus_faltantes": []
+}
