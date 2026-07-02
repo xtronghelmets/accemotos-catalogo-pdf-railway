@@ -769,6 +769,15 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         mostrar_precio=mostrar_precios,
     )
 
+    # Precio justo debajo del nombre (consistente con las páginas pre-hechas)
+    if mostrar_precios:
+        _draw_precios(
+            c, cfg, 16, y_nombre_bottom - 2,
+            precio_mayor=precio_mayor, precio_detal=precio_detal,
+            mostrar_mayor=mostrar_precio_mayor, mostrar_detal=mostrar_precio_detal,
+            fs=9,
+        )
+
     # Imagen
     y_img_top = y_nombre_bottom - 166
     TABLE_TOP = (TABLA_COLOR_H + TABLA_ROW_H * 3) + 40
@@ -812,10 +821,10 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
             c, cfg, y_cur, tallas_data,
             color_nombre=color_label,
             color_hex_str=color_hex_str,
-            precio_mayor=precio_mayor if idx_color == 0 else None,
-            precio_detal=precio_detal if idx_color == 0 else None,
-            mostrar_precio_mayor=mostrar_precio_mayor if idx_color == 0 else False,
-            mostrar_precio_detal=mostrar_precio_detal if idx_color == 0 else False,
+            precio_mayor=None,
+            precio_detal=None,
+            mostrar_precio_mayor=False,
+            mostrar_precio_detal=False,
         )
         y_cur -= 10
 

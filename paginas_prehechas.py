@@ -44,21 +44,26 @@ PRECIO_Y_MARGEN         = 18   # pt entre el borde inferior de la tabla y la pri
 
 # ── Tabla unificada (rehecha por ReportLab, reemplaza el estampado sobre el JPG)
 # Con TRUE, en cada página pre-hecha se cubre la tabla horneada en el JPG y se
-# vuelve a dibujar una tabla única, ordenada y consistente (misma que las
-# páginas dinámicas). Fija los desbordes y las columnas "pegadas" en otro estilo.
+# vuelve a dibujar una tabla única, ordenada y CENTRADA, consistente en todas
+# las páginas. Fija los desbordes y las columnas "pegadas" en otro estilo.
 REDIBUJAR_TABLA_UNIFICADA = True
 ESCALA_TABLA_DEFECTO   = 1.0   # usa 0.72 (o pon "escala_tabla" en el JSON) en páginas con specs
+TABLA_CENTRADA         = True  # centra la tabla en la página (recomendado)
 COLOR_COVER            = '#FFFFFF'  # color para tapar la tabla horneada antes de redibujar
-COVER_PAD_IZQ          = 40    # pt extra a la izquierda al tapar (cubre la columna "TALLA/CÓDIGO")
-COVER_PAD_DER          = 12    # pt extra a la derecha
-COVER_PAD_ARRIBA       = 30    # pt extra arriba (cubre encabezado de color/talla horneado)
-COVER_PAD_ABAJO        = 14    # pt extra abajo
+# El tapado cubre una FRANJA DE ANCHO COMPLETO a la altura de la tabla horneada,
+# para ocultar el rótulo TALLA/CÓDIGO, los bordes verdes y la sección inferior
+# izquierda de color (círculo + texto) cuando exista.
+COVER_X_LEFT           = 16    # borde izq. del tapado
+COVER_X_RIGHT          = PAGE_W - 16   # borde der. del tapado
+COVER_PAD_ARRIBA       = 42    # pt extra arriba (cubre rótulos/talla horneada y el círculo de color)
+COVER_PAD_ABAJO        = 16    # pt extra abajo
 
 # ── Precio debajo del nombre (punto 2) ───────────────────────────────────────
 PRECIO_DEBAJO_NOMBRE   = True  # True: precio justo bajo el nombre; False: bajo la tabla
-X_PRECIO_BAJO_NOMBRE   = 20    # pt desde la izquierda (alineado con el nombre)
-Y_PRECIO_BAJO_NOMBRE   = 905   # pt (desde abajo) de la 1ª línea; calibrar tras 1 prueba
+X_PRECIO_BAJO_NOMBRE   = 32    # pt desde la izquierda (un poco a la derecha)
+Y_PRECIO_BAJO_NOMBRE   = 888   # pt (desde abajo) de la 1ª línea; un poco más abajo
 FONT_SIZE_PRECIO_NOMBRE = 9    # un poco menor que FONT_SIZE_PRECIO
+
 
 
 def _sin_tildes(s):
@@ -226,55 +231,43 @@ def dibujar_pagina_prehecha(c, cfg, grupo, indice, carpeta_assets,
 def _redibujar_tabla_unificada(c, cfg, grupo, coords_existentes, escala,
                                 mostrar_precio_mayor, mostrar_precio_detal, log):
     """
-    Tapa la tabla horneada en el JPG (usando las coordenadas de los SKUs que
-    el diseñador ya había puesto) y dibuja encima una sola tabla unificada con
-    generador_web.dibujar_tabla_maestra: tallas ordenadas, columnas que no se
-    desbordan, y '*' + leyenda para las variaciones "adicionales" (set / visor
-    adicional / mecanismo adicional) cuando una talla se repite con otro SKU.
+    Tapa la tabla horneada en el JPG y dibuja encima una sola tabla unificada
+    con generador_web.dibujar_tabla_maestra: tallas ordenadas, '*' + leyenda
+    para las variaciones "adicionales", columnas que no se desbordan.
+
+    Estrategia (arregla puntos 3 y 4):
+    - Se toma la ALTURA de la tabla horneada de las coordenadas del JSON, pero
+      NO su posición horizontal.
+    - Se tapa una FRANJA DE ANCHO COMPLETO a esa altura, cubriendo el rótulo
+      "TALLA/CÓDIGO", los bordes y la sección inferior izquierda de color.
+    - La tabla nueva se dibuja CENTRADA en la página, siempre igual.
     """
     from generador_web import dibujar_tabla_maestra, TABLA_ROW_H
 
-    xs = sorted(x for x, _ in coords_existentes.values())
     ys = [y for _, y in coords_existentes.values()]
     y_codigo = sorted(ys)[len(ys) // 2]  # y de la fila de código (todas ~iguales)
-
-    # Ancho de columna estimado de la tabla horneada
-    if len(xs) >= 2:
-        deltas = [b - a for a, b in zip(xs, xs[1:])]
-        ancho_col = sum(deltas) / len(deltas)
-    else:
-        ancho_col = ANCHO_COL_DEFECTO
-
-    # Centro X de la tabla horneada = incluye su columna de rótulos (a la izq.)
-    label_x   = xs[0] - ancho_col
-    x_left    = label_x - ancho_col / 2
-    x_right   = xs[-1] + ancho_col / 2
-    x_center  = (x_left + x_right) / 2
-
-    # 1) Tapar la tabla horneada
     row_h = TABLA_ROW_H * escala
+
+    # 1) Tapar la franja horneada de ancho completo
     cover_top    = y_codigo + FILA_TALLA_OFFSET + COVER_PAD_ARRIBA
     cover_bottom = y_codigo - FILA_INVENTARIO_OFFSET - COVER_PAD_ABAJO
     c.setFillColor(HexColor(COLOR_COVER))
-    c.rect(x_left - COVER_PAD_IZQ, cover_bottom,
-           (x_right - x_left) + COVER_PAD_IZQ + COVER_PAD_DER,
-           cover_top - cover_bottom, fill=1, stroke=0)
+    c.rect(COVER_X_LEFT, cover_bottom,
+           COVER_X_RIGHT - COVER_X_LEFT, cover_top - cover_bottom,
+           fill=1, stroke=0)
 
-    # 2) Redibujar tabla unificada, anclada donde estaba la horneada
+    # 2) Redibujar tabla unificada, CENTRADA, a la altura de la horneada
     filas = [
         {'talla': s['talla'], 'codigo': s['sku'],
          'inventario': s['inventario'], 'nombre': s.get('nombre_producto', '')}
         for s in grupo['skus']
     ]
-    n = max(len(filas), 1)
-    # y_top tal que la fila de código quede a la altura de la horneada
-    y_top = y_codigo + 1.67 * row_h
-    # que las columnas queden como las del diseñador cuando quepan
-    max_width = min(ancho_col * (n + 1), PAGE_W - 40)
+    y_top = y_codigo + 1.67 * row_h  # que la fila de código quede a la altura horneada
+    x_center = (PAGE_W / 2) if TABLA_CENTRADA else None
 
     dibujar_tabla_maestra(
         c, cfg, y_top, filas,
-        x_center=x_center, max_width=max_width, escala=escala,
+        x_center=x_center, max_width=PAGE_W - 40, escala=escala,
         mostrar_color=False, marcar_adicionales=True,
         precio_mayor=grupo['skus'][0].get('precio_mayor'),
         precio_detal=grupo['skus'][0].get('precio_detal'),

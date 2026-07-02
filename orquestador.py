@@ -98,7 +98,18 @@ def _grupo_a_producto_dinamico(grupo, sku_index):
     }
 
 
-def _resolver_imagen_grupo(grupo, sku_index, carpeta_cache, callback_log=None):
+def _resolver_imagen_grupo(grupo, sku_index, carpeta_cache, callback_log=None,
+                           carpeta_locales=None):
+    # 1) Respaldo manual: imagen local por SKU (assets/imagenes_locales/{marca}/{sku}.jpg)
+    #    Sirve para productos sin página pre-hecha cuya foto no está en WooCommerce
+    #    (p.ej. XTR-802 DISCOVER). Basta con dejar el archivo con el nombre del SKU.
+    if carpeta_locales and os.path.isdir(carpeta_locales):
+        for s in grupo['skus']:
+            for ext in ('.jpg', '.jpeg', '.png', '.webp'):
+                cand = os.path.join(carpeta_locales, f"{s['sku']}{ext}")
+                if os.path.exists(cand):
+                    return cand
+    # 2) Imagen desde WooCommerce (variación o producto padre)
     for s in grupo['skus']:
         meta = sku_index.get(str(s['sku']))
         if meta and meta.get('imagen'):
@@ -156,6 +167,10 @@ def generar_catalogo(
 
     carpeta_cache = carpeta_cache or f'/tmp/cache_imagenes/{marca}'
     os.makedirs(carpeta_cache, exist_ok=True)
+
+    # Carpeta opcional de imágenes locales de respaldo, por SKU:
+    #   assets/imagenes_locales/{marca}/{sku}.jpg|png|...
+    carpeta_locales = os.path.join(carpeta_assets_raiz, 'imagenes_locales', marca)
 
     # 1) Excel maestro → grupos activos → catálogo ordenado
     log("📊 Leyendo Excel maestro...")
@@ -275,7 +290,9 @@ def generar_catalogo(
                 )
             else:
                 producto = _grupo_a_producto_dinamico(grupo, sku_index)
-                img_path = _resolver_imagen_grupo(grupo, sku_index, carpeta_cache, callback_log=log)
+                img_path = _resolver_imagen_grupo(grupo, sku_index, carpeta_cache,
+                                                  callback_log=log,
+                                                  carpeta_locales=carpeta_locales)
                 s0 = grupo['skus'][0]
                 gw._pagina_producto(
                     c, cfg, producto, img_path,
