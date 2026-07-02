@@ -119,6 +119,119 @@ def _hx(s):
     return HexColor(s)
 
 
+def _buscar_asset(carpeta, fname):
+    """Busca asset probando guion bajo, espacios, sin tildes, distintas extensiones.
+    Función de módulo (antes vivía anidada en generar_pdf_desde_productos) para
+    que orquestador.py también pueda resolver rutas de assets de forma idéntica."""
+    import unicodedata
+    def sin_tildes(s):
+        return ''.join(c for c in unicodedata.normalize('NFD', s)
+                      if unicodedata.category(c) != 'Mn')
+    base, ext_orig = fname.rsplit('.', 1) if '.' in fname else (fname, 'png')
+    candidatos = []
+    for base_v in [base, base.replace('_', ' '), sin_tildes(base), sin_tildes(base).replace('_', ' ')]:
+        for ext in [ext_orig, 'png', 'jpg', 'jpeg', 'PNG', 'JPG']:
+            candidatos.append(f"{base_v}.{ext}")
+    if os.path.isdir(carpeta):
+        archivos = os.listdir(carpeta)
+        base_norm = sin_tildes(base.replace('_', '').replace(' ', '')).upper()
+        for archivo in archivos:
+            arch_norm = sin_tildes(archivo.replace('_', '').replace(' ', '')).upper()
+            arch_norm = arch_norm.rsplit('.', 1)[0] if '.' in arch_norm else arch_norm
+            if arch_norm == base_norm:
+                candidatos.insert(0, archivo)
+    for cand in candidatos:
+        path = os.path.join(carpeta, cand)
+        if os.path.exists(path):
+            return path
+    return os.path.join(carpeta, fname)
+
+
+def _cargar_image_reader_seguro(path, nombre, log=None, timeout_seg=8):
+    """Carga ImageReader con timeout. Prefiere _opt.jpg si existe.
+
+    IMPORTANTE: no confía en la extensión del archivo. Algunos "_opt.jpg"
+    de este repo resultaron ser en realidad PNG con canal alpha (transparencia)
+    guardados con extensión .jpg por error de exportación. Si se cargan
+    directo, ReportLab pinta los píxeles crudos bajo el canal alpha — que en
+    estos archivos son negros — produciendo fondos negros sólidos donde
+    debería verse blanco/transparente. Por eso siempre se hace un `probe`
+    del modo real con PIL antes de decidir el camino rápido vs. aplanado."""
+    def _log(m):
+        if log:
+            log(m)
+
+    if not path or not os.path.exists(path):
+        _log(f"  ⚠️ No existe: {nombre} ({path})")
+        return None
+
+    base, _ext = os.path.splitext(path)
+    opt_path = base + '_opt.jpg'
+    ruta_real = opt_path if (os.path.exists(opt_path) and os.path.getsize(opt_path) > 1000) else path
+
+    from PIL import Image as _PIL
+    try:
+        with _PIL.open(ruta_real) as probe:
+            modo = probe.mode
+    except Exception as e:
+        _log(f"  ⚠️ No se pudo leer {nombre} ({ruta_real}): {e}")
+        return None
+
+    if modo not in ('RGBA', 'LA', 'P'):
+        # Camino rápido real: la imagen es opaca de verdad (sin canal alpha),
+        # sin importar si el archivo "original" era PNG — se carga tal cual.
+        try:
+            reader = ImageReader(ruta_real)
+            _log(f"  ✅ {nombre} cargado ← {ruta_real} (modo {modo})")
+            return reader
+        except Exception as e:
+            _log(f"  ⚠️ Error cargando {nombre} ({ruta_real}): {e} — reintentando con PIL")
+
+    _log(f"  ℹ️ {nombre}: {ruta_real} tiene transparencia o falló directo "
+         f"(modo {modo}) — aplanando sobre blanco")
+
+    result = [None]
+    error  = [None]
+
+    def _cargar():
+        try:
+            from io import BytesIO
+            img = _PIL.open(ruta_real)
+            w, h = img.size
+            MAX = 1200
+            if max(w, h) > MAX:
+                if w >= h:
+                    img.thumbnail((MAX, int(h * MAX / w)), _PIL.LANCZOS)
+                else:
+                    img.thumbnail((int(w * MAX / h), MAX), _PIL.LANCZOS)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                fondo = _PIL.new('RGB', img.size, (255, 255, 255))
+                fondo.paste(img.convert('RGB'), mask=img.split()[-1])
+                img = fondo
+            else:
+                img = img.convert('RGB')
+            buf = BytesIO()
+            img.save(buf, 'JPEG', quality=88, optimize=True)
+            buf.seek(0)
+            result[0] = ImageReader(buf)
+        except Exception as e:
+            error[0] = str(e)
+
+    t = threading.Thread(target=_cargar, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seg)
+    if t.is_alive():
+        _log(f"  ⚠️ Timeout cargando {nombre} ({ruta_real}) — se usará fallback")
+        return None
+    if error[0]:
+        _log(f"  ⚠️ Error {nombre} ({ruta_real}): {error[0]}")
+        return None
+    _log(f"  ✅ {nombre} pre-cargado y aplanado sobre blanco ← {ruta_real}")
+    return result[0]
+
+
 # ── Header ───────────────────────────────────────────────────────────────────
 
 def _draw_header(c, cfg, categoria, logo_path=None):
@@ -333,11 +446,16 @@ def _draw_imagen(c, img_path, x, y_top, w, h_max):
 
 # ── Tabla de tallas/colores ───────────────────────────────────────────────────
 
-def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None):
+def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None,
+                 precio_mayor=None, precio_detal=None,
+                 mostrar_precio_mayor=False, mostrar_precio_detal=False):
     """
     tallas_data: lista de (talla, codigo, inventario)
     Filas: encabezado color (circulo+nombre) + TALLA / CÓDIGO / INVENTARIO
-    Sin fila COLOR — el color se muestra solo en el encabezado verde
+    Sin fila COLOR — el color se muestra solo en el encabezado verde.
+    Si mostrar_precio_mayor/detal es True, dibuja 1-2 líneas de precio justo
+    debajo de la tabla (mismo formato que las páginas pre-hechas).
+    Devuelve el y inferior de todo el bloque (tabla + precios si los hay).
     """
     n = max(len(tallas_data), 1)
     COL_W   = min(68, (PAGE_W - 40) / (n + 1))
@@ -414,6 +532,35 @@ def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None)
         c.setLineWidth(0.5)
         c.rect(x0, y_tabla_bottom, tabla_w, total_h, fill=0, stroke=1)
 
+    # Precios (opcional) — justo debajo de la tabla, alineados a su borde
+    # izquierdo. Formato colombiano: $130.000, sin decimales.
+    y_final = y_tabla_bottom
+    lineas_precio = []
+    if mostrar_precio_detal and precio_detal:
+        lineas_precio.append(f'PRECIO DETAL: {_formatear_precio(precio_detal)}')
+    if mostrar_precio_mayor and precio_mayor:
+        lineas_precio.append(f'PRECIO MAYOR: {_formatear_precio(precio_mayor)}')
+    if lineas_precio:
+        c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), 10)
+        c.setFillColor(HexColor(cfg.get('color_precio', '#444444')))
+        y_final -= 16
+        for linea in lineas_precio:
+            c.drawString(x0, y_final, linea)
+            y_final -= 14
+
+    return y_final
+
+
+def _formatear_precio(valor):
+    """$130.000 — formato colombiano, sin decimales. None/valores raros -> None."""
+    if valor is None:
+        return None
+    try:
+        n = int(round(float(valor)))
+    except (TypeError, ValueError):
+        return None
+    return '$' + f'{n:,}'.replace(',', '.')
+
 
 # ── Número de página ──────────────────────────────────────────────────────────
 
@@ -480,7 +627,9 @@ def _es_pro(producto):
 
 
 def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
-                     carpeta_assets, assets_tipo=None, bg_reader=None, bg_pro_reader=None):
+                     carpeta_assets, assets_tipo=None, bg_reader=None, bg_pro_reader=None,
+                     precio_mayor=None, precio_detal=None,
+                     mostrar_precio_mayor=False, mostrar_precio_detal=False):
     # Fondo: imagen de plantilla para Xecuro, blanco para Xtrong
     # Usar reader pre-cargado si está disponible (evita releer disco en cada página)
     reader_a_usar = None
@@ -514,12 +663,11 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
     _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets)
 
     # Nombre + descripción
-    precio = 0  # No mostrar precio en el catálogo
     desc_corta = producto.get('desc_corta', '') or producto.get('descripcion', '') or ''
     y_nombre_bottom = _draw_nombre_zona(
         c, cfg, producto['nombre'],
         descripcion_corta=desc_corta,
-        precio=precio,
+        precio=precio_detal or precio_mayor,
         mostrar_precio=mostrar_precios,
     )
 
@@ -544,7 +692,7 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         grupos_color[color].append(v)
 
     y_cur = TABLE_TOP
-    for color, vars_color in grupos_color.items():
+    for idx_color, (color, vars_color) in enumerate(grupos_color.items()):
         tallas_data = []
         for v in vars_color:
             talla = v.get('talla', '') or ''
@@ -562,10 +710,16 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
             tallas_data.append((talla, v.get('sku', '') or '-', v.get('inventario', None)))
         color_label   = color if color != 'default' else ''
         color_hex_str = color_hex(color) if color not in ('default', '') else None
-        _draw_tabla(c, cfg, y_cur, tallas_data,
-                    color_nombre=color_label,
-                    color_hex_str=color_hex_str)
-        y_cur -= (TABLA_COLOR_H + TABLA_ROW_H * 3 + 10)
+        y_cur = _draw_tabla(
+            c, cfg, y_cur, tallas_data,
+            color_nombre=color_label,
+            color_hex_str=color_hex_str,
+            precio_mayor=precio_mayor if idx_color == 0 else None,
+            precio_detal=precio_detal if idx_color == 0 else None,
+            mostrar_precio_mayor=mostrar_precio_mayor if idx_color == 0 else False,
+            mostrar_precio_detal=mostrar_precio_detal if idx_color == 0 else False,
+        )
+        y_cur -= 10
 
     _draw_numero_pagina(c, num, total)
 
@@ -645,97 +799,17 @@ def generar_pdf_desde_productos(
     portada_fname  = assets_tipo_dict.get('portada', 'PORTADA.jpg')
     contra_fname   = assets_tipo_dict.get('contraportada', 'CONTRAPORTADA.jpg')
 
-    def _buscar_asset(carpeta, fname):
-        """Busca asset probando guion bajo, espacios, sin tildes, distintas extensiones."""
-        import unicodedata
-        def sin_tildes(s):
-            return ''.join(c for c in unicodedata.normalize('NFD', s)
-                          if unicodedata.category(c) != 'Mn')
-        base, ext_orig = fname.rsplit('.', 1) if '.' in fname else (fname, 'png')
-        candidatos = []
-        for base_v in [base, base.replace('_', ' '), sin_tildes(base), sin_tildes(base).replace('_', ' ')]:
-            for ext in [ext_orig, 'png', 'jpg', 'jpeg', 'PNG', 'JPG']:
-                candidatos.append(f"{base_v}.{ext}")
-        # También listar carpeta y buscar por similitud
-        if os.path.isdir(carpeta):
-            archivos = os.listdir(carpeta)
-            base_norm = sin_tildes(base.replace('_', '').replace(' ', '')).upper()
-            for archivo in archivos:
-                arch_norm = sin_tildes(archivo.replace('_', '').replace(' ', '')).upper()
-                arch_norm = arch_norm.rsplit('.', 1)[0] if '.' in arch_norm else arch_norm
-                if arch_norm == base_norm:
-                    candidatos.insert(0, archivo)
-        for c in candidatos:
-            path = os.path.join(carpeta, c)
-            if os.path.exists(path):
-                return path
-        return os.path.join(carpeta, fname)
+    def _buscar_asset_local(fname):
+        return _buscar_asset(carpeta_assets, fname)
 
-    portada_path = _buscar_asset(carpeta_assets, portada_fname)
-    contra_path  = _buscar_asset(carpeta_assets, contra_fname)
+    def _cargar_reader_local(path, nombre):
+        return _cargar_image_reader_seguro(path, nombre, log=log)
 
-    def _cargar_image_reader_seguro(path, nombre, timeout_seg=8):
-        """Carga ImageReader con timeout. Prefiere _opt.jpg si existe."""
-        if not path or not os.path.exists(path):
-            log(f"  ⚠️ No existe: {nombre} ({path})")
-            return None
-        # Preferir versión _opt.jpg pre-optimizada si existe (sin necesidad de PIL)
-        base, _ = os.path.splitext(path)
-        opt_path = base + '_opt.jpg'
-        if os.path.exists(opt_path) and os.path.getsize(opt_path) > 1000:
-            try:
-                reader = ImageReader(opt_path)
-                log(f"  ✅ {nombre} cargado (opt.jpg)")
-                return reader
-            except Exception:
-                pass  # fallback al proceso normal
-        result = [None]
-        error  = [None]
+    portada_path = _buscar_asset_local(portada_fname)
+    contra_path  = _buscar_asset_local(contra_fname)
 
-        def _cargar():
-            try:
-                # Intentar primero con PIL para controlar el proceso
-                from PIL import Image as _PIL
-                from io import BytesIO
-                img = _PIL.open(path)
-                # Reducir resolución si es muy grande (>1500px en cualquier lado)
-                w, h = img.size
-                MAX = 1200
-                if max(w, h) > MAX:
-                    if w >= h:
-                        img = img.thumbnail((MAX, int(h * MAX / w)), _PIL.LANCZOS)
-                    else:
-                        img = img.thumbnail((int(w * MAX / h), MAX), _PIL.LANCZOS)
-                # Convertir a RGB sin alpha
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    fondo = _PIL.new('RGB', img.size, (255, 255, 255))
-                    fondo.paste(img.convert('RGB'), mask=img.split()[-1])
-                    img = fondo
-                else:
-                    img = img.convert('RGB')
-                buf = BytesIO()
-                img.save(buf, 'JPEG', quality=88, optimize=True)
-                buf.seek(0)
-                result[0] = ImageReader(buf)
-            except Exception as e:
-                error[0] = str(e)
-
-        t = threading.Thread(target=_cargar, daemon=True)
-        t.start()
-        t.join(timeout=timeout_seg)
-        if t.is_alive():
-            log(f"  ⚠️ Timeout cargando {nombre} — se usará fallback")
-            return None
-        if error[0]:
-            log(f"  ⚠️ Error {nombre}: {error[0]}")
-            return None
-        log(f"  ✅ {nombre} pre-cargado")
-        return result[0]
-
-    portada_reader = _cargar_image_reader_seguro(portada_path, "Portada")
-    contra_reader  = _cargar_image_reader_seguro(contra_path,  "Contraportada")
+    portada_reader = _cargar_reader_local(portada_path, "Portada")
+    contra_reader  = _cargar_reader_local(contra_path,  "Contraportada")
 
     # Pre-cargar fondos de página en memoria (se reusan en cada producto)
     bg_fname     = assets_tipo_dict.get('pagina_bg')
@@ -743,11 +817,12 @@ def generar_pdf_desde_productos(
     bg_reader     = None
     bg_pro_reader = None
     if bg_fname:
-        bg_path   = _buscar_asset(carpeta_assets, bg_fname)
-        bg_reader = _cargar_image_reader_seguro(bg_path, f"Fondo página ({bg_fname})")
+        bg_path   = _buscar_asset_local(bg_fname)
+        log(f"  🔍 Fondo página resuelto a: {bg_path} (existe: {os.path.exists(bg_path)})")
+        bg_reader = _cargar_reader_local(bg_path, f"Fondo página ({bg_fname})")
     if bg_pro_fname:
-        bg_pro_path   = _buscar_asset(carpeta_assets, bg_pro_fname)
-        bg_pro_reader = _cargar_image_reader_seguro(bg_pro_path, f"Fondo PRO ({bg_pro_fname})")
+        bg_pro_path   = _buscar_asset_local(bg_pro_fname)
+        bg_pro_reader = _cargar_reader_local(bg_pro_path, f"Fondo PRO ({bg_pro_fname})")
 
     assets_tipo = assets_tipo_dict
     log(f"  📄 Portada: {portada_fname}")

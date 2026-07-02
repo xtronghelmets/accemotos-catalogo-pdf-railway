@@ -1,65 +1,22 @@
-/* app.js — generador de catálogos v2 */
+/* app.js — generador de catálogos v3 (catalogo_id fijo, ya no categorías Woo) */
 
 const MARCAS = {
   xtrong: { color: '#005654', acento: '#B6FF00' },
   xecuro: { color: '#303830', acento: '#FFAD40' },
 };
 
-// Tipos de catálogo por marca con sus categorías WooCommerce asociadas
-const TIPOS_CATALOGO = {
-  xtrong: [
-    {
-      key:    'abatibles_abiertos',
-      nombre: 'Cascos abatibles y abiertos',
-      desc:   'Abatibles, Abiertos',
-      cats:   ['Abatibles', 'Abiertos'],
-    },
-    {
-      key:    'integrales',
-      nombre: 'Cascos integrales',
-      desc:   'Integrales',
-      cats:   ['Integrales'],
-    },
-    {
-      key:    'textiles_accesorios',
-      nombre: 'Textiles y accesorios',
-      desc:   'Chaquetas, Guantes, Impermeables y más',
-      cats:   ['Chaquetas', 'Guantes', 'IMPERMEABLES', 'Tela', 'Urbanas',
-               'ACCESORIOS', 'Candados', 'INTERCOMS', 'Intercomunicadores',
-               'Rodilleras y Coderas', 'Body armors', 'INDUMENTARIA DE PROTECCIÓN',
-               'Antiempañantes', 'Cobertores/Pijamas', 'Caña corta'],
-    },
-  ],
-  xecuro: [
-    {
-      key:    'cascos',
-      nombre: 'Cascos',
-      desc:   'Cascos integrales, abiertos y más',
-      cats:   ['Cascos', 'Integrales', 'Abiertos', 'Abatibles', 'Carretera', 'Multipropósito'],
-    },
-    {
-      key:    'impermeables',
-      nombre: 'Impermeables',
-      desc:   'Impermeables y ropa de lluvia',
-      cats:   ['Impermeables', 'IMPERMEABLES'],
-    },
-    {
-      key:    'intercomunicadores',
-      nombre: 'Intercomunicadores',
-      desc:   'Intercoms e intercomunicadores',
-      cats:   ['Intercomunicadores', 'INTERCOMS', 'Intercoms'],
-    },
-  ],
-};
+// Se llena al cargar la página con GET /api/catalogos:
+// { xtrong: [{key, nombre}, ...], xecuro: [{key, nombre}, ...] }
+let CATALOGOS_POR_MARCA = null;
 
 let marcaActual  = 'xtrong';
-let tipoActual   = 'abatibles_abiertos';
+let tipoActual   = null;
 let jobActual    = null;
 let pollInterval = null;
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('input[name="marca"]').forEach(r => {
     r.addEventListener('change', e => seleccionarMarca(e.target.value));
   });
@@ -74,9 +31,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  await cargarCatalogos();
+
   // Aplicar selección visual de XTRONG al cargar
   seleccionarMarca('xtrong');
 });
+
+async function cargarCatalogos() {
+  const lista = document.getElementById('cat-tipo-list');
+  try {
+    const r = await fetch('/api/catalogos');
+    const d = await r.json();
+    CATALOGOS_POR_MARCA = { xtrong: [], xecuro: [] };
+    (d.catalogos || []).forEach(c => {
+      CATALOGOS_POR_MARCA[c.marca].push({ key: c.id, nombre: c.nombre });
+    });
+  } catch (e) {
+    CATALOGOS_POR_MARCA = { xtrong: [], xecuro: [] };
+    lista.innerHTML = '<div class="cat-loading">No se pudo cargar la lista de catálogos. Recarga la página.</div>';
+  }
+}
 
 // ── Marca ─────────────────────────────────────────────────────────────────
 
@@ -108,10 +82,14 @@ function actualizarTheme() {
 
 function renderTipos() {
   const lista = document.getElementById('cat-tipo-list');
-  const tipos = TIPOS_CATALOGO[marcaActual];
+  const tipos = CATALOGOS_POR_MARCA ? CATALOGOS_POR_MARCA[marcaActual] : null;
 
   if (!tipos) {
-    lista.innerHTML = '<div class="cat-loading">Cargando tipos...</div>';
+    lista.innerHTML = '<div class="cat-loading">Cargando catálogos...</div>';
+    return;
+  }
+  if (tipos.length === 0) {
+    lista.innerHTML = '<div class="cat-loading">No hay catálogos configurados para esta marca.</div>';
     return;
   }
 
@@ -129,7 +107,6 @@ function renderTipos() {
         <div class="cat-tipo-radio ${rCls}"><div class="radio-dot"></div></div>
         <div class="cat-tipo-info">
           <div class="cat-tipo-nombre">${t.nombre}</div>
-          <div class="cat-tipo-desc">${t.desc}</div>
         </div>
       </div>`;
   }).join('');
@@ -150,13 +127,6 @@ async function iniciarGeneracion() {
     return;
   }
 
-  const tipos = TIPOS_CATALOGO[marcaActual];
-  const tipo  = tipos ? tipos.find(t => t.key === tipoActual) : null;
-  if (!tipo) {
-    alert('Tipo de catálogo no válido.');
-    return;
-  }
-
   const btn = document.getElementById('btn-gen');
   btn.disabled    = true;
   btn.textContent = 'Generando...';
@@ -166,14 +136,10 @@ async function iniciarGeneracion() {
   setNavStatus('busy', 'Generando...');
 
   const payload = {
-    marca:           marcaActual,
-    titulo:          tipo.nombre,
-    tipo_catalogo:   tipo.key,
-    periodo:         periodo,
-    categorias:      tipo.cats,
-    precio_mayor:    document.getElementById('chk-precio-mayor').checked,
-    precio_detal:    document.getElementById('chk-precio-detal').checked,
-    solo_stock:      true,
+    catalogo_id:   tipoActual,
+    periodo:       periodo,
+    precio_mayor:  document.getElementById('chk-precio-mayor').checked,
+    precio_detal:  document.getElementById('chk-precio-detal').checked,
   };
 
   try {

@@ -4,7 +4,8 @@ import threading
 import uuid
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request, send_file
-from woo_api import obtener_productos_woo, obtener_categorias_woo
+
+from categorias_config import CATALOGOS
 
 app = Flask(
     __name__,
@@ -63,11 +64,6 @@ def _write_job(job_id, data):
     with open(_job_path(job_id), 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False)
 
-def _update_job(job_id, **kwargs):
-    j = _read_job(job_id) or {}
-    j.update(kwargs)
-    _write_job(job_id, j)
-
 
 # ── Rutas ─────────────────────────────────────────────────────────────────
 
@@ -76,24 +72,24 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/api/categorias/<marca>')
-def categorias(marca):
-    if marca not in MARCAS:
-        return jsonify({'error': 'Marca no válida'}), 400
-    m = MARCAS[marca]
-    try:
-        cats = obtener_categorias_woo(m['url'], m['ck'], m['cs'])
-        return jsonify({'categorias': cats})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/api/catalogos')
+def catalogos():
+    """Lista los 4 catálogos disponibles (1 XECURO general + 3 XTRONG),
+    para que el frontend no tenga que hardcodear nada más que esto."""
+    return jsonify({
+        'catalogos': [
+            {'id': cid, 'marca': cfg['marca'], 'nombre': cfg['nombre']}
+            for cid, cfg in CATALOGOS.items()
+        ]
+    })
 
 
 @app.route('/api/generar', methods=['POST'])
 def generar():
     data = request.json or {}
-    marca_key = data.get('marca', 'xtrong')
-    if marca_key not in MARCAS:
-        return jsonify({'error': 'Marca no válida'}), 400
+    catalogo_id = data.get('catalogo_id', '')
+    if catalogo_id not in CATALOGOS:
+        return jsonify({'error': f"catalogo_id no válido: '{catalogo_id}'"}), 400
 
     job_id = str(uuid.uuid4())[:8]
     _write_job(job_id, {
@@ -105,7 +101,7 @@ def generar():
 
     hilo = threading.Thread(
         target=_ejecutar_generacion,
-        args=(job_id, marca_key, data),
+        args=(job_id, catalogo_id, data),
         daemon=True,
     )
     hilo.start()
@@ -145,7 +141,7 @@ def descargar(job_id):
 
 # ── Worker de generación ──────────────────────────────────────────────────
 
-def _ejecutar_generacion(job_id, marca_key, data):
+def _ejecutar_generacion(job_id, catalogo_id, data):
     logs_acum = []
 
     def log(msg):
@@ -161,74 +157,51 @@ def _ejecutar_generacion(job_id, marca_key, data):
         _write_job(job_id, j)
 
     try:
-        m = MARCAS[marca_key]
-        categorias_filtro = data.get('categorias', [])
-        mostrar_precios   = data.get('mostrar_precios', True)
-        solo_stock        = data.get('solo_stock', True)
-        titulo_catalogo   = data.get('titulo', '').strip()
-        tipo_catalogo     = data.get('tipo_catalogo', '').strip()
-        periodo           = data.get('periodo', '').strip()
+        cfg_catalogo   = CATALOGOS[catalogo_id]
+        marca_key      = cfg_catalogo['marca']
+        periodo        = data.get('periodo', '').strip()
+        precio_mayor   = bool(data.get('precio_mayor', False))
+        precio_detal   = bool(data.get('precio_detal', False))
         if not periodo:
             raise ValueError("El período es obligatorio. Ej: Junio 2025 · Semana 1")
 
-        log(f"🔗 Conectando a API {m['nombre']}...")
-        progreso(5)
-
-        productos = obtener_productos_woo(
-            m['url'], m['ck'], m['cs'],
-            categorias_filtro=categorias_filtro,
-            solo_stock=solo_stock,
-            callback_log=log,
-            callback_progreso=lambda p: progreso(5 + int(p * 0.6)),
-        )
-
-        if not productos:
-            raise ValueError("No se encontraron productos con los filtros seleccionados.")
-
-        log(f"✅ {len(productos)} productos listos para generar")
-        progreso(65)
-
-        carpeta_cache  = f'/tmp/cache_imagenes/{marca_key}'
-        os.makedirs(carpeta_cache, exist_ok=True)
-        # Buscar assets en múltiples rutas posibles (Vercel vs local)
         base_dir = os.path.dirname(os.path.abspath(__file__))
         carpeta_assets = os.path.join(base_dir, 'assets', marca_key)
         for candidate in [
-            os.path.join(base_dir, 'assets', marca_key),           # assets/xtrong
-            os.path.join(base_dir, 'assets', marca_key.upper()),   # assets/XTRONG
-            os.path.join(base_dir, '..', 'assets', marca_key),
-            os.path.join(base_dir, '..', 'assets', marca_key.upper()),
+            os.path.join(base_dir, 'assets', marca_key),
+            os.path.join(base_dir, 'assets', marca_key.upper()),
             os.path.join('/var/task', 'assets', marca_key),
             os.path.join('/var/task', 'assets', marca_key.upper()),
         ]:
             if os.path.isdir(candidate):
                 carpeta_assets = candidate
-                log(f"  📁 Assets encontrado en: {candidate}")
                 break
-        else:
-            log(f"  ⚠️ Assets NO encontrado. Base dir: {base_dir}")
-            log(f"  ⚠️ Contenido de assets/: {os.listdir(os.path.join(base_dir,'assets')) if os.path.isdir(os.path.join(base_dir,'assets')) else 'no existe'}")
+
+        carpeta_cache = f'/tmp/cache_imagenes/{marca_key}'
+        os.makedirs(carpeta_cache, exist_ok=True)
 
         ahora        = datetime.now()
-        titulo_slug  = titulo_catalogo.replace(' ', '_') if titulo_catalogo else 'catalogo'
+        titulo_slug  = cfg_catalogo['nombre'].replace(' — ', '_').replace(' ', '_')
         periodo_slug = periodo.replace(' ', '_').replace('/', '-') if periodo else ''
         fecha_slug   = ahora.strftime('%Y%m%d-%H%M')
-        nombre_pdf   = f"Catalogo{m['nombre']}_{titulo_slug}_{periodo_slug}_{fecha_slug}.pdf"
+        nombre_pdf   = f"{titulo_slug}_{periodo_slug}_{fecha_slug}.pdf"
         ruta_pdf     = f'/tmp/{nombre_pdf}'
 
-        from generador_web import generar_pdf_desde_productos
-        generar_pdf_desde_productos(
-            productos=productos,
-            ruta_salida=ruta_pdf,
-            marca=marca_key,
-            titulo=titulo_catalogo,
-            tipo_catalogo=tipo_catalogo,
+        from orquestador import generar_catalogo
+        generar_catalogo(
+            catalogo_id=catalogo_id,
             periodo=periodo,
-            mostrar_precios=mostrar_precios,
+            ruta_salida=ruta_pdf,
+            mostrar_precio_mayor=precio_mayor,
+            mostrar_precio_detal=precio_detal,
             carpeta_assets=carpeta_assets,
             carpeta_cache=carpeta_cache,
+            marcas_woo={
+                'xtrong': MARCAS['xtrong'],
+                'xecuro': MARCAS['xecuro'],
+            },
             callback_log=log,
-            callback_progreso=lambda p: progreso(65 + int(p * 0.34)),
+            callback_progreso=progreso,
         )
 
         j = _read_job(job_id) or {}
