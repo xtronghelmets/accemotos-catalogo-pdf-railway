@@ -55,8 +55,17 @@ COLOR_COVER            = '#FFFFFF'  # color para tapar la tabla horneada antes d
 # izquierda de color (círculo + texto) cuando exista.
 COVER_X_LEFT           = 16    # borde izq. del tapado
 COVER_X_RIGHT          = PAGE_W - 16   # borde der. del tapado
-COVER_PAD_ARRIBA       = 42    # pt extra arriba (cubre rótulos/talla horneada y el círculo de color)
+COVER_PAD_ARRIBA       = 42    # pt extra arriba en páginas SOLO-producto (cubre el círculo de color inferior)
 COVER_PAD_ABAJO        = 16    # pt extra abajo
+
+# ── Páginas de INFORMACIÓN / especificaciones (punto 2) ──────────────────────
+# En estas páginas la tabla horneada convive con íconos de accesorios y círculos
+# de color justo ENCIMA. Por eso: (a) la tabla se dibuja más pequeña, y (b) el
+# tapado NO debe subir tanto (si sube, muerde los íconos/círculos del diseño).
+# Se consideran "specs" las páginas cuyo JSON trae "escala_tabla" < 1.0.
+FACTOR_REDUCE_SPECS    = 0.80  # multiplica la escala del JSON (0.72 -> ~0.58): tabla más pequeña
+COVER_PAD_ARRIBA_SPECS = 6     # pt extra arriba en páginas specs (tapado ceñido, no toca íconos/círculos)
+COVER_PAD_ABAJO_SPECS  = 8     # pt extra abajo en páginas specs
 
 # ── Precio debajo del nombre (punto 2) ───────────────────────────────────────
 PRECIO_DEBAJO_NOMBRE   = True  # True: precio justo bajo el nombre; False: bajo la tabla
@@ -244,13 +253,27 @@ def _redibujar_tabla_unificada(c, cfg, grupo, coords_existentes, escala,
     """
     from generador_web import dibujar_tabla_maestra, TABLA_ROW_H
 
+    # ¿Es página de información/especificaciones? El JSON lo marca con escala < 1.0.
+    # En ellas la tabla se achica un poco más y el tapado se ciñe para NO morder
+    # los íconos de accesorios ni los círculos de color que van justo encima.
+    es_specs = escala < 0.999
+    if es_specs:
+        escala = escala * FACTOR_REDUCE_SPECS   # tabla más pequeña (punto 2)
+        pad_arriba = COVER_PAD_ARRIBA_SPECS
+        pad_abajo  = COVER_PAD_ABAJO_SPECS
+    else:
+        pad_arriba = COVER_PAD_ARRIBA
+        pad_abajo  = COVER_PAD_ABAJO
+
     ys = [y for _, y in coords_existentes.values()]
     y_codigo = sorted(ys)[len(ys) // 2]  # y de la fila de código (todas ~iguales)
     row_h = TABLA_ROW_H * escala
 
-    # 1) Tapar la franja horneada de ancho completo
-    cover_top    = y_codigo + FILA_TALLA_OFFSET + COVER_PAD_ARRIBA
-    cover_bottom = y_codigo - FILA_INVENTARIO_OFFSET - COVER_PAD_ABAJO
+    # 1) Tapar la franja horneada. El alto del tapado se ciñe a la tabla horneada
+    #    (offsets fijos, porque el JPG no cambia de tamaño); solo el padding extra
+    #    arriba difiere entre specs (ceñido) y solo-producto (cubre círculo inferior).
+    cover_top    = y_codigo + FILA_TALLA_OFFSET + pad_arriba
+    cover_bottom = y_codigo - FILA_INVENTARIO_OFFSET - pad_abajo
     c.setFillColor(HexColor(COLOR_COVER))
     c.rect(COVER_X_LEFT, cover_bottom,
            COVER_X_RIGHT - COVER_X_LEFT, cover_top - cover_bottom,

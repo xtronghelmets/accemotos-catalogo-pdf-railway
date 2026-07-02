@@ -44,9 +44,16 @@ TIPO_LEGADO_POR_CATALOGO = {
 def _construir_indice_sku_woo(base_url, ck, cs, callback_log=None):
     """
     Descarga TODOS los productos de WooCommerce (sin filtro de categoría ni
-    de stock — de eso ya se encarga el Excel) y arma un índice
-    SKU -> {imagen, desc_corta, descripcion, color} para el fallback dinámico.
-    Solo se llama si de verdad hay grupos sin página pre-hecha.
+    de stock — de eso ya se encarga el Excel) y arma TRES índices para resolver
+    la imagen de un grupo aunque el SKU de variación no cuadre:
+
+      - 'sku':    SKU de variación   -> {imagen, desc, color}
+      - 'padre':  SKU del producto   -> {imagen, desc}   (para tiendas donde las
+                                        variaciones no tienen SKU propio)
+      - 'nombre': nombre limpio      -> {imagen, desc}   (último respaldo)
+
+    Devuelve {'sku':{}, 'padre':{}, 'nombre':{}}. Solo se llama si de verdad hay
+    grupos sin página pre-hecha.
     """
     def log(m):
         if callback_log:
@@ -55,33 +62,68 @@ def _construir_indice_sku_woo(base_url, ck, cs, callback_log=None):
     productos = obtener_productos_woo(
         base_url, ck, cs, categorias_filtro=None, solo_stock=False, callback_log=log,
     )
-    indice = {}
+    idx_sku, idx_padre, idx_nombre = {}, {}, {}
+    n_var = 0
     for p in productos:
+        img_padre = p.get('imagenes', '') or ''
+        sku_padre = str(p.get('sku') or '').strip()
+        nom = limpiar_nombre(p.get('nombre', ''))
+        meta_base = {'desc_corta': p.get('desc_corta', ''),
+                     'descripcion': p.get('descripcion', '')}
+        if sku_padre and img_padre:
+            idx_padre[sku_padre] = {**meta_base, 'imagen': img_padre}
+        if nom and img_padre:
+            idx_nombre.setdefault(nom, {**meta_base, 'imagen': img_padre})
         for v in p.get('variaciones', []):
             sku = str(v.get('sku') or '').strip()
             if not sku:
                 continue
-            indice[sku] = {
-                'imagen':      v.get('imagenes') or p.get('imagenes', ''),
-                'desc_corta':  p.get('desc_corta', ''),
-                'descripcion': p.get('descripcion', ''),
-                'color':       v.get('color', ''),
+            n_var += 1
+            idx_sku[sku] = {
+                **meta_base,
+                'imagen': v.get('imagenes') or img_padre,
+                'color':  v.get('color', ''),
             }
-    log(f"  🔎 Índice SKU↔WooCommerce: {len(indice)} SKUs")
-    return indice
+    log(f"  🔎 Índice Woo ({base_url}): {n_var} SKUs de variación, "
+        f"{len(idx_padre)} SKUs padre, {len(idx_nombre)} nombres")
+    if n_var == 0 and not idx_padre:
+        log("  ⚠️ El índice de WooCommerce quedó VACÍO: la tienda respondió pero "
+            "sin productos/imágenes utilizables (revisa credenciales, permisos de "
+            "lectura de la API, o que los productos estén publicados).")
+    return {'sku': idx_sku, 'padre': idx_padre, 'nombre': idx_nombre}
 
 
-def _grupo_a_producto_dinamico(grupo, sku_index):
+def _resolver_meta_grupo(grupo, woo_idx):
+    """Busca la meta (imagen/desc) de un grupo en los índices de Woo, en orden:
+    SKU de variación → SKU del padre → nombre limpio. Devuelve (meta, via)."""
+    if not woo_idx:
+        return None, None
+    for s in grupo['skus']:
+        m = woo_idx['sku'].get(str(s['sku']))
+        if m and m.get('imagen'):
+            return m, 'sku_variacion'
+    for s in grupo['skus']:
+        m = woo_idx['padre'].get(str(s['sku']))
+        if m and m.get('imagen'):
+            return m, 'sku_padre'
+    m = woo_idx['nombre'].get(limpiar_nombre(grupo['nombre_producto']))
+    if m and m.get('imagen'):
+        return m, 'nombre'
+    return None, None
+
+
+def _grupo_a_producto_dinamico(grupo, woo_idx):
     """Convierte un grupo del Excel maestro en el dict 'producto' que espera
     generador_web._pagina_producto(), tomando imagen/desc de WooCommerce."""
+    # Descripción a nivel de grupo: por sku de variación, luego padre, luego nombre
+    meta_grupo, _ = _resolver_meta_grupo(grupo, woo_idx)
+    desc_corta  = (meta_grupo or {}).get('desc_corta', '')
+    descripcion = (meta_grupo or {}).get('descripcion', '')
+    idx_sku = woo_idx['sku'] if woo_idx else {}
+
     variaciones = []
-    desc_corta = descripcion = ''
     for s in grupo['skus']:
-        meta = sku_index.get(str(s['sku']), {})
-        if not desc_corta and meta.get('desc_corta'):
-            desc_corta = meta['desc_corta']
-        if not descripcion and meta.get('descripcion'):
-            descripcion = meta['descripcion']
+        meta = idx_sku.get(str(s['sku']), {})
         variaciones.append({
             'nombre':     s['nombre_producto'],
             'sku':        str(s['sku']),
@@ -98,27 +140,52 @@ def _grupo_a_producto_dinamico(grupo, sku_index):
     }
 
 
-def _resolver_imagen_grupo(grupo, sku_index, carpeta_cache, callback_log=None,
+def _resolver_imagen_grupo(grupo, woo_idx, carpeta_cache, callback_log=None,
                            carpeta_locales=None):
-    # 1) Respaldo manual: imagen local por SKU (assets/imagenes_locales/{marca}/{sku}.jpg)
-    #    Sirve para productos sin página pre-hecha cuya foto no está en WooCommerce
-    #    (p.ej. XTR-802 DISCOVER). Basta con dejar el archivo con el nombre del SKU.
+    """Devuelve la ruta a una imagen para el grupo, o None. Deja en el log
+    EXACTAMENTE por qué no se resolvió, para que las páginas con foto en gris
+    dejen de ser un misterio (punto 1)."""
+    def log(m):
+        if callback_log:
+            callback_log(m)
+
+    skus = [str(s['sku']) for s in grupo['skus']]
+
+    # 1) Respaldo manual: imagen local por SKU
+    #    (assets/imagenes_locales/{marca}/{sku}.jpg|jpeg|png|webp)
     if carpeta_locales and os.path.isdir(carpeta_locales):
         for s in grupo['skus']:
-            for ext in ('.jpg', '.jpeg', '.png', '.webp'):
+            for ext in ('.jpg', '.jpeg', '.png', '.webp', '.JPG', '.JPEG', '.PNG'):
                 cand = os.path.join(carpeta_locales, f"{s['sku']}{ext}")
                 if os.path.exists(cand):
+                    log(f"  🖼️ Imagen local: {os.path.basename(cand)}")
                     return cand
-    # 2) Imagen desde WooCommerce (variación o producto padre)
-    for s in grupo['skus']:
-        meta = sku_index.get(str(s['sku']))
-        if meta and meta.get('imagen'):
-            path = descargar_imagen(
-                meta['imagen'], f"grp_{grupo['grupo_foto']}",
-                grupo['nombre_producto'], carpeta_cache, callback_log=callback_log,
-            )
-            if path:
-                return path
+
+    # 2) Imagen desde WooCommerce (variación → padre → nombre)
+    if not woo_idx:
+        log(f"  ⚠️ {grupo['grupo_foto']} ({grupo['nombre_producto'][:40]}): foto en gris "
+            f"— sin índice de WooCommerce (sin credenciales o falló la conexión). "
+            f"Respaldo: dejar la foto en {carpeta_locales}/{skus[0]}.jpg")
+        return None
+
+    meta, via = _resolver_meta_grupo(grupo, woo_idx)
+    if meta and meta.get('imagen'):
+        path = descargar_imagen(
+            meta['imagen'], f"grp_{grupo['grupo_foto']}",
+            grupo['nombre_producto'], carpeta_cache, callback_log=callback_log,
+        )
+        if path:
+            if via != 'sku_variacion':
+                log(f"  🖼️ {grupo['grupo_foto']}: imagen resuelta por {via}")
+            return path
+        log(f"  ⚠️ {grupo['grupo_foto']}: la URL existe ({via}) pero la descarga falló: "
+            f"{str(meta['imagen'])[:70]}")
+        return None
+
+    # Nada cuadró: decir por qué
+    log(f"  ⚠️ {grupo['grupo_foto']} ({grupo['nombre_producto'][:40]}): foto en gris "
+        f"— SKUs {skus} no están en WooCommerce (ni como variación ni como padre) "
+        f"y el nombre no cruzó. Respaldo: dejar la foto en {carpeta_locales}/{skus[0]}.jpg")
     return None
 
 
@@ -197,19 +264,23 @@ def generar_catalogo(
     log(f"  📄 {total_grupos - len(faltantes)} con página pre-hecha, "
         f"{len(faltantes)} necesitan generación dinámica")
 
-    # 3) Solo si hace falta, traer índice de SKUs de WooCommerce (imagen/desc)
-    sku_index = {}
+    # 3) Solo si hace falta, traer índice de imágenes de WooCommerce
+    woo_idx = None
     if faltantes:
         if marcas_woo and marca in marcas_woo and marcas_woo[marca].get('ck'):
             m = marcas_woo[marca]
-            log("🔗 Conectando a WooCommerce para imágenes de grupos sin página...")
+            log(f"🔗 Conectando a WooCommerce ({m.get('url')}) para imágenes de "
+                f"{len(faltantes)} grupos sin página...")
             try:
-                sku_index = _construir_indice_sku_woo(m['url'], m['ck'], m['cs'], callback_log=log)
+                woo_idx = _construir_indice_sku_woo(m['url'], m['ck'], m['cs'], callback_log=log)
             except Exception as e:
-                log(f"  ⚠️ No se pudo consultar WooCommerce: {e} — esos grupos saldrán sin imagen")
+                import traceback
+                log(f"  ⚠️ No se pudo consultar WooCommerce: {type(e).__name__}: {e}")
+                log(f"     (revisa credenciales/permisos de la API. Detalle: "
+                    f"{traceback.format_exc().splitlines()[-1]}) — esos grupos saldrán sin imagen")
         else:
-            log("  ⚠️ Sin credenciales de WooCommerce — los grupos sin página pre-hecha "
-                "saldrán sin imagen de producto")
+            log("  ⚠️ Sin credenciales de WooCommerce (falta 'ck' en marcas_woo) — "
+                "los grupos sin página pre-hecha saldrán sin imagen de producto")
     prog(25)
 
     # 4) Config de marca: colores + fuentes reales (Kanit/Sora) + logo
@@ -289,8 +360,8 @@ def generar_catalogo(
                     callback_log=log,
                 )
             else:
-                producto = _grupo_a_producto_dinamico(grupo, sku_index)
-                img_path = _resolver_imagen_grupo(grupo, sku_index, carpeta_cache,
+                producto = _grupo_a_producto_dinamico(grupo, woo_idx)
+                img_path = _resolver_imagen_grupo(grupo, woo_idx, carpeta_cache,
                                                   callback_log=log,
                                                   carpeta_locales=carpeta_locales)
                 s0 = grupo['skus'][0]

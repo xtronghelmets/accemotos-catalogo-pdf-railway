@@ -110,6 +110,10 @@ CERT_ASSETS = {
 }
 
 PAGE_W, PAGE_H = 595, 1060
+
+# Cuánto baja el bloque de precio bajo el nombre en páginas dinámicas (Woo).
+# Súbelo para bajar más el precio; bájalo para acercarlo al nombre.
+PRECIO_DYN_OFFSET_Y = 30
 HEADER_H       = 50
 TABLA_ROW_H    = 24
 TABLA_COLOR_H  = 22    # encabezado de color
@@ -769,10 +773,11 @@ def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
         mostrar_precio=mostrar_precios,
     )
 
-    # Precio justo debajo del nombre (consistente con las páginas pre-hechas)
+    # Precio debajo del nombre, un poco más abajo (punto 1: en páginas dinámicas
+    # el precio subía demasiado). PRECIO_DYN_OFFSET_Y lo baja sin tocar el nombre.
     if mostrar_precios:
         _draw_precios(
-            c, cfg, 16, y_nombre_bottom - 2,
+            c, cfg, 16, y_nombre_bottom - PRECIO_DYN_OFFSET_Y,
             precio_mayor=precio_mayor, precio_detal=precio_detal,
             mostrar_mayor=mostrar_precio_mayor, mostrar_detal=mostrar_precio_detal,
             fs=9,
