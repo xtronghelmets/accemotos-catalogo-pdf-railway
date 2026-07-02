@@ -444,111 +444,197 @@ def _draw_imagen(c, img_path, x, y_top, w, h_max):
     return y_bottom
 
 
+# ── Orden de tallas + detección de "adicionales" ─────────────────────────────
+_TALLA_NORMALIZA = {'XXS': '2XS', 'XXL': '2XL', 'XXXL': '3XL', 'UNICA': 'ÚNICA'}
+_TALLA_ORDEN = ['3XS', '2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'ÚNICA']
+# "adicional" = el nombre contiene 'set', 'mecanismo adicional' o 'visor adicional'
+_ADIC_RE = re.compile(r'\bset\b|mecanismo\s+adicional|visor\s+adicional', re.IGNORECASE)
+
+
+def _norm_talla(t):
+    t = str(t or '').upper().strip()
+    return _TALLA_NORMALIZA.get(t, t)
+
+
+def _orden_talla(t):
+    t = _norm_talla(t)
+    return _TALLA_ORDEN.index(t) if t in _TALLA_ORDEN else 90
+
+
+def _es_adicional(nombre):
+    return bool(_ADIC_RE.search(str(nombre or '')))
+
+
 # ── Tabla de tallas/colores ───────────────────────────────────────────────────
 
-def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None,
-                 precio_mayor=None, precio_detal=None,
-                 mostrar_precio_mayor=False, mostrar_precio_detal=False):
+def dibujar_tabla_maestra(c, cfg, y_top, filas, x_center=None, max_width=None,
+                          escala=1.0, mostrar_color=False, color_nombre='',
+                          color_hex_str=None, marcar_adicionales=True,
+                          precio_mayor=None, precio_detal=None,
+                          mostrar_precio_mayor=False, mostrar_precio_detal=False,
+                          precios_debajo=True):
     """
-    tallas_data: lista de (talla, codigo, inventario)
-    Filas: encabezado color (circulo+nombre) + TALLA / CÓDIGO / INVENTARIO
-    Sin fila COLOR — el color se muestra solo en el encabezado verde.
-    Si mostrar_precio_mayor/detal es True, dibuja 1-2 líneas de precio justo
-    debajo de la tabla (mismo formato que las páginas pre-hechas).
-    Devuelve el y inferior de todo el bloque (tabla + precios si los hay).
-    """
-    n = max(len(tallas_data), 1)
-    COL_W   = min(68, (PAGE_W - 40) / (n + 1))
-    tabla_w = COL_W * (n + 1)
-    x0      = (PAGE_W - tabla_w) / 2
-    y_cur   = y_top
+    Tabla UNIFICADA talla/código/inventario. Reemplaza cualquier estampado de
+    celdas sueltas: recibe TODAS las variaciones del grupo y las dibuja como
+    una sola tabla coherente.
 
-    # Encabezado de color (solo circulo + nombre, fondo verde)
-    if color_nombre:
-        y_cur -= TABLA_COLOR_H
-        c.setFillColor(_hx(cfg['color_principal']))
-        c.roundRect(x0, y_cur, tabla_w, TABLA_COLOR_H, 4, fill=1, stroke=0)
+    filas: lista de dicts {'talla', 'codigo' (o 'sku'), 'inventario', 'nombre'}
+
+    - Ordena las tallas canónicamente (3XS→3XL→ÚNICA) y agrupa duplicados.
+    - Auto-ajusta el ancho de columna para NUNCA desbordar `max_width`.
+    - `escala` < 1.0 encoge toda la tabla (útil en páginas con specs).
+    - Cuando una talla se repite con distinto SKU, la fila cuyo nombre es
+      "adicional" (set / visor adicional / mecanismo adicional) lleva un `*`
+      en la celda de TALLA y se dibuja la leyenda "*Incluye adicionales".
+    - `x_center=None` centra en la página; si se pasa, centra en ese x.
+    - Si `precios_debajo` es True y hay precios, los pinta bajo la tabla.
+
+    Devuelve el y inferior del bloque completo.
+    """
+    from collections import Counter
+
+    if max_width is None:
+        max_width = PAGE_W - 40
+    row_h  = TABLA_ROW_H * escala
+    col_h  = TABLA_COLOR_H * escala
+    fs_lbl = max(6.0, 9 * escala)
+    fs_val = max(6.0, 9 * escala)
+    dy     = row_h * 0.33  # baseline vertical dentro de cada celda
+
+    # Normalizar filas + detectar duplicados de talla + marcar adicionales
+    norm = []
+    for f in filas:
+        norm.append({
+            'talla':  _norm_talla(f.get('talla')),
+            'codigo': str(f.get('codigo') if f.get('codigo') is not None else (f.get('sku') or '-')),
+            'inv':    f.get('inventario', None),
+            'adic':   _es_adicional(f.get('nombre', '')),
+        })
+    cnt = Counter(x['talla'] for x in norm)
+    hay_adic = False
+    for x in norm:
+        x['marca'] = bool(marcar_adicionales and x['adic'] and cnt[x['talla']] > 1)
+        hay_adic = hay_adic or x['marca']
+
+    # Ordenar: talla canónica; dentro de la misma talla, la normal antes que la adicional
+    norm.sort(key=lambda x: (_orden_talla(x['talla']), x['marca'], x['codigo']))
+
+    n = max(len(norm), 1)
+    col_w   = min(64 * escala, max_width / (n + 1))
+    tabla_w = col_w * (n + 1)
+    x0 = ((PAGE_W - tabla_w) / 2) if x_center is None else (x_center - tabla_w / 2)
+    y  = y_top
+
+    prin = _hx(cfg['color_principal'])
+    acen = _hx(cfg['color_acento'])
+
+    # Encabezado de color (opcional)
+    if mostrar_color and color_nombre:
+        y -= col_h
+        c.setFillColor(prin)
+        c.roundRect(x0, y, tabla_w, col_h, 4, fill=1, stroke=0)
         if color_hex_str:
             try:
                 c.setFillColor(HexColor(color_hex_str))
-                c.circle(x0 + 14, y_cur + TABLA_COLOR_H / 2, 7, fill=1, stroke=0)
+                c.circle(x0 + 12 * escala, y + col_h / 2, 6 * escala, fill=1, stroke=0)
             except Exception:
                 pass
         c.setFillColor(white)
-        c.setFont('Helvetica-Bold', 11)
-        c.drawString(x0 + 28, y_cur + 7, color_nombre.title())
+        c.setFont('Helvetica-Bold', fs_lbl)
+        c.drawString(x0 + 24 * escala, y + col_h * 0.3, color_nombre.title())
 
-    # Fila TALLA
-    y_cur -= TABLA_ROW_H
-    c.setFillColor(_hx(cfg['color_principal']))
-    c.rect(x0, y_cur, COL_W, TABLA_ROW_H, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont('Helvetica-Bold', 9)
-    c.drawCentredString(x0 + COL_W / 2, y_cur + 8, 'TALLA')
-    for k, (talla, _, _) in enumerate(tallas_data):
-        cx = x0 + COL_W * (k + 1)
-        c.setFillColor(_hx(cfg['color_acento']))
-        c.rect(cx, y_cur, COL_W, TABLA_ROW_H, fill=1, stroke=0)
-        c.setFillColor(_hx(cfg['color_principal']))
-        c.setFont('Helvetica-Bold', 9)
-        c.drawCentredString(cx + COL_W / 2, y_cur + 8, str(talla or '-')[:8])
+    def _fila(label, get, hdr_fill, hdr_txt, cell_fill, cell_txt, valfont, marca_col):
+        nonlocal y
+        y -= row_h
+        c.setFillColor(hdr_fill); c.rect(x0, y, col_w, row_h, fill=1, stroke=0)
+        c.setFillColor(hdr_txt);  c.setFont('Helvetica-Bold', fs_lbl)
+        c.drawCentredString(x0 + col_w / 2, y + dy, label)
+        for k, x in enumerate(norm):
+            cx = x0 + col_w * (k + 1)
+            c.setFillColor(cell_fill); c.rect(cx, y, col_w, row_h, fill=1, stroke=0)
+            c.setFillColor(cell_txt);  c.setFont(valfont, fs_val)
+            txt = get(x)
+            if marca_col and x['marca']:
+                txt = txt + '*'
+            c.drawCentredString(cx + col_w / 2, y + dy, txt[:11])
 
-    # Fila CÓDIGO
-    y_cur -= TABLA_ROW_H
-    c.setFillColor(HexColor('#F0F0F0'))
-    c.rect(x0, y_cur, COL_W, TABLA_ROW_H, fill=1, stroke=0)
-    c.setFillColor(HexColor('#333333'))
-    c.setFont('Helvetica-Bold', 9)
-    c.drawCentredString(x0 + COL_W / 2, y_cur + 8, 'CÓDIGO')
-    for k, (_, codigo, _) in enumerate(tallas_data):
-        cx = x0 + COL_W * (k + 1)
-        c.setFillColor(HexColor('#F8F8F8'))
-        c.rect(cx, y_cur, COL_W, TABLA_ROW_H, fill=1, stroke=0)
-        c.setFillColor(HexColor('#333333'))
-        c.setFont('Helvetica', 9)
-        c.drawCentredString(cx + COL_W / 2, y_cur + 8, str(codigo or '-')[:10])
+    _fila('TALLA', lambda x: (_norm_talla(x['talla']) or '-'),
+          prin, white, acen, prin, 'Helvetica-Bold', marca_col=True)
+    _fila('CÓDIGO', lambda x: x['codigo'],
+          HexColor('#F0F0F0'), HexColor('#333333'),
+          HexColor('#F8F8F8'), HexColor('#333333'), 'Helvetica', marca_col=False)
+    _fila('INVENT.', lambda x: (str(x['inv']) if x['inv'] is not None else '-'),
+          HexColor('#F0F0F0'), HexColor('#333333'),
+          HexColor('#F8F8F8'), HexColor('#333333'), 'Helvetica', marca_col=False)
 
-    # Fila INVENTARIO
-    y_cur -= TABLA_ROW_H
-    c.setFillColor(HexColor('#F0F0F0'))
-    c.rect(x0, y_cur, COL_W, TABLA_ROW_H, fill=1, stroke=0)
-    c.setFillColor(HexColor('#333333'))
-    c.setFont('Helvetica-Bold', 9)
-    c.drawCentredString(x0 + COL_W / 2, y_cur + 8, 'INVENT.')
-    for k, (_, _, inv) in enumerate(tallas_data):
-        cx = x0 + COL_W * (k + 1)
-        c.setFillColor(HexColor('#F8F8F8'))
-        c.rect(cx, y_cur, COL_W, TABLA_ROW_H, fill=1, stroke=0)
-        c.setFillColor(HexColor('#333333'))
-        c.setFont('Helvetica', 9)
-        inv_txt = str(inv) if inv is not None else '-'
-        c.drawCentredString(cx + COL_W / 2, y_cur + 8, inv_txt)
+    total_h = (col_h if (mostrar_color and color_nombre) else 0) + row_h * 3
+    y_bottom = y_top - total_h
+    if y_bottom >= 8:
+        c.setStrokeColor(HexColor('#DDDDDD')); c.setLineWidth(0.5)
+        c.rect(x0, y_bottom, tabla_w, total_h, fill=0, stroke=1)
 
-    # Borde exterior — solo si está dentro de la página
-    total_h = (TABLA_COLOR_H if color_nombre else 0) + TABLA_ROW_H * 3
-    y_tabla_bottom = y_top - total_h
-    if y_tabla_bottom >= 10:
-        c.setStrokeColor(HexColor('#DDDDDD'))
-        c.setLineWidth(0.5)
-        c.rect(x0, y_tabla_bottom, tabla_w, total_h, fill=0, stroke=1)
+    y_final = y_bottom
 
-    # Precios (opcional) — justo debajo de la tabla, alineados a su borde
-    # izquierdo. Formato colombiano: $130.000, sin decimales.
-    y_final = y_tabla_bottom
-    lineas_precio = []
-    if mostrar_precio_detal and precio_detal:
-        lineas_precio.append(f'PRECIO DETAL: {_formatear_precio(precio_detal)}')
-    if mostrar_precio_mayor and precio_mayor:
-        lineas_precio.append(f'PRECIO MAYOR: {_formatear_precio(precio_mayor)}')
-    if lineas_precio:
-        c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), 10)
-        c.setFillColor(HexColor(cfg.get('color_precio', '#444444')))
-        y_final -= 16
-        for linea in lineas_precio:
-            c.drawString(x0, y_final, linea)
-            y_final -= 14
+    # Leyenda de adicionales
+    if hay_adic:
+        y_final -= 10 * escala
+        c.setFillColor(HexColor('#666666'))
+        c.setFont('Helvetica-Oblique', max(6.0, 7.5 * escala))
+        c.drawString(x0, y_final, '*Incluye adicionales')
+
+    # Precios debajo de la tabla (opcional)
+    if precios_debajo:
+        y_final = _draw_precios(
+            c, cfg, x0, y_final - (4 * escala),
+            precio_mayor=precio_mayor, precio_detal=precio_detal,
+            mostrar_mayor=mostrar_precio_mayor, mostrar_detal=mostrar_precio_detal,
+            fs=max(7.0, 10 * escala),
+        )
 
     return y_final
+
+
+def _draw_precios(c, cfg, x, y_top, precio_mayor=None, precio_detal=None,
+                  mostrar_mayor=False, mostrar_detal=False, fs=9):
+    """Dibuja 1-2 líneas de precio (DETAL / MAYOR) alineadas a `x`, empezando
+    justo debajo de `y_top`. Devuelve el y inferior. Formato colombiano."""
+    lineas = []
+    if mostrar_detal and precio_detal:
+        p = _formatear_precio(precio_detal)
+        if p:
+            lineas.append(f'PRECIO DETAL: {p}')
+    if mostrar_mayor and precio_mayor:
+        p = _formatear_precio(precio_mayor)
+        if p:
+            lineas.append(f'PRECIO MAYOR: {p}')
+    if not lineas:
+        return y_top
+    c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), fs)
+    c.setFillColor(HexColor(cfg.get('color_precio', '#444444')))
+    y = y_top
+    for linea in lineas:
+        y -= fs + 3
+        c.drawString(x, y, linea)
+    return y
+
+
+def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None,
+                precio_mayor=None, precio_detal=None,
+                mostrar_precio_mayor=False, mostrar_precio_detal=False):
+    """Wrapper compatible con el path dinámico (una tabla por color).
+    tallas_data: lista de (talla, codigo, inventario)."""
+    filas = [{'talla': t, 'codigo': cod, 'inventario': inv, 'nombre': ''}
+             for (t, cod, inv) in tallas_data]
+    return dibujar_tabla_maestra(
+        c, cfg, y_top, filas,
+        mostrar_color=bool(color_nombre),
+        color_nombre=color_nombre, color_hex_str=color_hex_str,
+        marcar_adicionales=False,  # el path dinámico ya separa por color
+        precio_mayor=precio_mayor, precio_detal=precio_detal,
+        mostrar_precio_mayor=mostrar_precio_mayor,
+        mostrar_precio_detal=mostrar_precio_detal,
+        precios_debajo=True,
+    )
 
 
 def _formatear_precio(valor):
@@ -572,9 +658,12 @@ def _draw_numero_pagina(c, num, total):
 
 # ── Full bleed ────────────────────────────────────────────────────────────────
 
-def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
+def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None,
+                     fecha_actualizacion=None):
     """Acepta ImageReader pre-cargado (rápido) o None (fallback color sólido).
-    NUNCA intenta abrir un archivo PNG directamente — eso cuelga ReportLab en Vercel."""
+    NUNCA intenta abrir un archivo PNG directamente — eso cuelga ReportLab en Vercel.
+    `fecha_actualizacion`: texto opcional (dd/mm/aaaa) que se pinta muy pequeño
+    debajo del período en la portada."""
     dibujado = False
     if isinstance(img_path_o_reader, ImageReader):
         try:
@@ -596,12 +685,21 @@ def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None):
 
         if marca == 'xtrong':
             # Solo período, en negro, en el área blanca debajo del logo (esquina superior derecha)
+            # Se corre un poco a la izquierda (x_right menor) respecto a la versión anterior.
+            x_right = PAGE_W - 58
             if periodo_txt:
                 y_periodo = PAGE_H * 0.815 + 85
-                x_right   = PAGE_W - 25
                 c.setFillColor(HexColor('#000000'))
                 c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
                 c.drawRightString(x_right, y_periodo, periodo_txt)
+            # Fecha de última actualización de inventario, muy pequeña, justo debajo
+            if fecha_actualizacion:
+                c.setFillColor(HexColor('#333333'))
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 6.5)
+                y_fecha = (PAGE_H * 0.815 + 85) - 12 if periodo_txt else (PAGE_H * 0.815 + 73)
+                c.drawRightString(
+                    x_right, y_fecha,
+                    f'Última actualización de inventario: {fecha_actualizacion}')
         else:
             # Comportamiento original para xecuro y otras marcas
             y_base  = PAGE_H * 0.78

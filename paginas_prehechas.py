@@ -42,6 +42,24 @@ FONT_SIZE_PRECIO        = 10
 PRECIO_LINE_H           = 14
 PRECIO_Y_MARGEN         = 18   # pt entre el borde inferior de la tabla y la primera línea de precio
 
+# ── Tabla unificada (rehecha por ReportLab, reemplaza el estampado sobre el JPG)
+# Con TRUE, en cada página pre-hecha se cubre la tabla horneada en el JPG y se
+# vuelve a dibujar una tabla única, ordenada y consistente (misma que las
+# páginas dinámicas). Fija los desbordes y las columnas "pegadas" en otro estilo.
+REDIBUJAR_TABLA_UNIFICADA = True
+ESCALA_TABLA_DEFECTO   = 1.0   # usa 0.72 (o pon "escala_tabla" en el JSON) en páginas con specs
+COLOR_COVER            = '#FFFFFF'  # color para tapar la tabla horneada antes de redibujar
+COVER_PAD_IZQ          = 40    # pt extra a la izquierda al tapar (cubre la columna "TALLA/CÓDIGO")
+COVER_PAD_DER          = 12    # pt extra a la derecha
+COVER_PAD_ARRIBA       = 30    # pt extra arriba (cubre encabezado de color/talla horneado)
+COVER_PAD_ABAJO        = 14    # pt extra abajo
+
+# ── Precio debajo del nombre (punto 2) ───────────────────────────────────────
+PRECIO_DEBAJO_NOMBRE   = True  # True: precio justo bajo el nombre; False: bajo la tabla
+X_PRECIO_BAJO_NOMBRE   = 20    # pt desde la izquierda (alineado con el nombre)
+Y_PRECIO_BAJO_NOMBRE   = 905   # pt (desde abajo) de la 1ª línea; calibrar tras 1 prueba
+FONT_SIZE_PRECIO_NOMBRE = 9    # un poco menor que FONT_SIZE_PRECIO
+
 
 def _sin_tildes(s):
     return ''.join(c for c in unicodedata.normalize('NFD', s)
@@ -169,26 +187,114 @@ def dibujar_pagina_prehecha(c, cfg, grupo, indice, carpeta_assets,
 
     inventario_por_sku = {str(s['sku']): s for s in grupo['skus']}
 
-    # 2) Fila de inventario para los SKUs que SÍ están en la página
-    c.setFont(fuentes['bold'], FONT_SIZE_INVENTARIO)
-    c.setFillColor(HexColor('#333333'))
-    for sku_str, (x, y) in coords_existentes.items():
-        s = inventario_por_sku.get(sku_str)
-        inv_txt = str(s['inventario']) if s else '-'
-        c.drawCentredString(x, y - FILA_INVENTARIO_OFFSET, inv_txt)
+    # Escala de la tabla: 1.0 normal; el JSON puede fijar "escala_tabla" (p.ej.
+    # 0.72 en páginas producto+specs para que la tabla quepa más pequeña).
+    escala_tabla = float(data.get('escala_tabla') or ESCALA_TABLA_DEFECTO)
 
-    # 3) Extender tabla para SKUs faltantes en la página
-    skus_faltantes = [s for s in grupo['skus'] if str(s['sku']) not in coords_existentes]
-    y_tabla_inferior = min((y for _, y in coords_existentes.values()), default=None)
-    if skus_faltantes and coords_existentes:
-        _extender_tabla(c, cfg, fuentes, coords_existentes, skus_faltantes, log)
+    if REDIBUJAR_TABLA_UNIFICADA and coords_existentes:
+        # 2') Tapar la tabla horneada del JPG y redibujar UNA tabla unificada,
+        #     ordenada y consistente (misma que las páginas dinámicas).
+        _redibujar_tabla_unificada(
+            c, cfg, grupo, coords_existentes, escala_tabla,
+            mostrar_precio_mayor, mostrar_precio_detal, log,
+        )
+    else:
+        # Camino antiguo (por si se desactiva REDIBUJAR_TABLA_UNIFICADA o no
+        # hay coordenadas): estampar inventario sobre celdas + extender + precios.
+        c.setFont(fuentes['bold'], FONT_SIZE_INVENTARIO)
+        c.setFillColor(HexColor('#333333'))
+        for sku_str, (x, y) in coords_existentes.items():
+            s = inventario_por_sku.get(sku_str)
+            inv_txt = str(s['inventario']) if s else '-'
+            c.drawCentredString(x, y - FILA_INVENTARIO_OFFSET, inv_txt)
 
-    # 4) Precios debajo de la tabla
-    if mostrar_precio_mayor or mostrar_precio_detal:
-        _dibujar_precios(c, cfg, fuentes, grupo, coords_existentes,
-                          mostrar_precio_mayor, mostrar_precio_detal)
+        skus_faltantes = [s for s in grupo['skus'] if str(s['sku']) not in coords_existentes]
+        if skus_faltantes and coords_existentes:
+            _extender_tabla(c, cfg, fuentes, coords_existentes, skus_faltantes, log)
+
+        if (mostrar_precio_mayor or mostrar_precio_detal) and not PRECIO_DEBAJO_NOMBRE:
+            _dibujar_precios(c, cfg, fuentes, grupo, coords_existentes,
+                             mostrar_precio_mayor, mostrar_precio_detal)
+
+    # Precio debajo del nombre (punto 2) — vale para ambos caminos
+    if (mostrar_precio_mayor or mostrar_precio_detal) and PRECIO_DEBAJO_NOMBRE:
+        _precio_bajo_nombre(c, cfg, grupo, mostrar_precio_mayor, mostrar_precio_detal)
 
     return True
+
+
+def _redibujar_tabla_unificada(c, cfg, grupo, coords_existentes, escala,
+                                mostrar_precio_mayor, mostrar_precio_detal, log):
+    """
+    Tapa la tabla horneada en el JPG (usando las coordenadas de los SKUs que
+    el diseñador ya había puesto) y dibuja encima una sola tabla unificada con
+    generador_web.dibujar_tabla_maestra: tallas ordenadas, columnas que no se
+    desbordan, y '*' + leyenda para las variaciones "adicionales" (set / visor
+    adicional / mecanismo adicional) cuando una talla se repite con otro SKU.
+    """
+    from generador_web import dibujar_tabla_maestra, TABLA_ROW_H
+
+    xs = sorted(x for x, _ in coords_existentes.values())
+    ys = [y for _, y in coords_existentes.values()]
+    y_codigo = sorted(ys)[len(ys) // 2]  # y de la fila de código (todas ~iguales)
+
+    # Ancho de columna estimado de la tabla horneada
+    if len(xs) >= 2:
+        deltas = [b - a for a, b in zip(xs, xs[1:])]
+        ancho_col = sum(deltas) / len(deltas)
+    else:
+        ancho_col = ANCHO_COL_DEFECTO
+
+    # Centro X de la tabla horneada = incluye su columna de rótulos (a la izq.)
+    label_x   = xs[0] - ancho_col
+    x_left    = label_x - ancho_col / 2
+    x_right   = xs[-1] + ancho_col / 2
+    x_center  = (x_left + x_right) / 2
+
+    # 1) Tapar la tabla horneada
+    row_h = TABLA_ROW_H * escala
+    cover_top    = y_codigo + FILA_TALLA_OFFSET + COVER_PAD_ARRIBA
+    cover_bottom = y_codigo - FILA_INVENTARIO_OFFSET - COVER_PAD_ABAJO
+    c.setFillColor(HexColor(COLOR_COVER))
+    c.rect(x_left - COVER_PAD_IZQ, cover_bottom,
+           (x_right - x_left) + COVER_PAD_IZQ + COVER_PAD_DER,
+           cover_top - cover_bottom, fill=1, stroke=0)
+
+    # 2) Redibujar tabla unificada, anclada donde estaba la horneada
+    filas = [
+        {'talla': s['talla'], 'codigo': s['sku'],
+         'inventario': s['inventario'], 'nombre': s.get('nombre_producto', '')}
+        for s in grupo['skus']
+    ]
+    n = max(len(filas), 1)
+    # y_top tal que la fila de código quede a la altura de la horneada
+    y_top = y_codigo + 1.67 * row_h
+    # que las columnas queden como las del diseñador cuando quepan
+    max_width = min(ancho_col * (n + 1), PAGE_W - 40)
+
+    dibujar_tabla_maestra(
+        c, cfg, y_top, filas,
+        x_center=x_center, max_width=max_width, escala=escala,
+        mostrar_color=False, marcar_adicionales=True,
+        precio_mayor=grupo['skus'][0].get('precio_mayor'),
+        precio_detal=grupo['skus'][0].get('precio_detal'),
+        mostrar_precio_mayor=(mostrar_precio_mayor and not PRECIO_DEBAJO_NOMBRE),
+        mostrar_precio_detal=(mostrar_precio_detal and not PRECIO_DEBAJO_NOMBRE),
+        precios_debajo=(not PRECIO_DEBAJO_NOMBRE),
+    )
+
+
+def _precio_bajo_nombre(c, cfg, grupo, mostrar_mayor, mostrar_detal):
+    """Dibuja el precio (1-2 líneas) justo debajo del nombre del producto,
+    con fuente algo menor. Posición calibrable con Y_PRECIO_BAJO_NOMBRE."""
+    from generador_web import _draw_precios
+    s0 = grupo['skus'][0]
+    _draw_precios(
+        c, cfg, X_PRECIO_BAJO_NOMBRE, Y_PRECIO_BAJO_NOMBRE,
+        precio_mayor=s0.get('precio_mayor'), precio_detal=s0.get('precio_detal'),
+        mostrar_mayor=mostrar_mayor, mostrar_detal=mostrar_detal,
+        fs=FONT_SIZE_PRECIO_NOMBRE,
+    )
 
 
 def _extender_tabla(c, cfg, fuentes, coords_existentes, skus_faltantes, log):

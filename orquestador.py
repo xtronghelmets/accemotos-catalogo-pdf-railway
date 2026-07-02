@@ -235,8 +235,25 @@ def generar_catalogo(
     c = canvas.Canvas(ruta_salida, pagesize=(gw.PAGE_W, gw.PAGE_H))
 
     log("  📄 Portada...")
+    # Fecha de última actualización = mtime del Excel maestro (data/SKU_grupos_precios.xlsx)
+    fecha_excel = None
+    try:
+        import datetime as _dt
+        for _cand in (
+            os.path.join(base_dir, 'data', 'SKU_grupos_precios.xlsx'),
+            os.path.join(base_dir, 'data', 'SKU_grupos_precios.xlsm'),
+            datos.get('ruta_excel') if isinstance(datos, dict) else None,
+        ):
+            if _cand and os.path.exists(_cand):
+                fecha_excel = _dt.datetime.fromtimestamp(
+                    os.path.getmtime(_cand)).strftime('%d/%m/%Y')
+                break
+    except Exception as _e:
+        log(f"  ⚠️ No se pudo leer la fecha del Excel: {_e}")
+
     overlay = f"{cfg_catalogo['nombre'].upper()}|{periodo}" if periodo else cfg_catalogo['nombre'].upper()
-    gw._draw_full_bleed(c, portada_reader or portada_path, texto_overlay=overlay, cfg=cfg)
+    gw._draw_full_bleed(c, portada_reader or portada_path, texto_overlay=overlay, cfg=cfg,
+                        fecha_actualizacion=fecha_excel)
     c.showPage()
     prog(33)
 
