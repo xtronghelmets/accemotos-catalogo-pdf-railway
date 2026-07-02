@@ -65,6 +65,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-gen').addEventListener('click', iniciarGeneracion);
 
+  // Checkboxes de precio — ambos independientes, ambos desmarcados por defecto
+  ['mayor', 'detal'].forEach(tipo => {
+    const input = document.getElementById(`chk-precio-${tipo}`);
+    const opt   = document.getElementById(`opt-precio-${tipo}`);
+    input.addEventListener('change', () => {
+      opt.classList.toggle('checked', input.checked);
+    });
+  });
+
   // Aplicar selección visual de XTRONG al cargar
   seleccionarMarca('xtrong');
 });
@@ -162,7 +171,8 @@ async function iniciarGeneracion() {
     tipo_catalogo:   tipo.key,
     periodo:         periodo,
     categorias:      tipo.cats,
-    mostrar_precios: true,
+    precio_mayor:    document.getElementById('chk-precio-mayor').checked,
+    precio_detal:    document.getElementById('chk-precio-detal').checked,
     solo_stock:      true,
   };
 
