@@ -70,12 +70,13 @@ def descargar_imagen(urls_str, sku, nombre, carpeta_cache, callback_log=None):
                 except Exception:
                     pass
 
-    # 4. Descargar desde URL
-    for url in urls:
+    # 4. Descargar desde URL (acotado: máx 2 URLs y timeout corto, para que
+    #    NUNCA cuelgue la generación esperando la red).
+    for url in urls[:2]:
         try:
             parsed = urlparse(url)
             referer = f"{parsed.scheme}://{parsed.netloc}/"
-            r = requests.get(url, timeout=15,
+            r = requests.get(url, timeout=(5, 8),
                              headers={
                                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                                                'AppleWebKit/537.36 (KHTML, like Gecko) '
