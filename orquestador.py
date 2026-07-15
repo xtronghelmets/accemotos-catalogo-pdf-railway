@@ -112,6 +112,7 @@ def generar_catalogo(
     carpeta_assets=None,
     carpeta_cache=None,
     marcas_woo=None,   # {'xtrong': {'url','ck','cs'}, 'xecuro': {...}}
+    dinamico_si_falta=False,  # True: si falta la página, descarga la foto (col K)
     callback_log=None,
     callback_progreso=None,
 ):
@@ -177,13 +178,42 @@ def generar_catalogo(
     indice_prehechas = construir_indice(carpeta_assets_raiz, marca, callback_log=log)
     prog(15)
 
+    def _tiene_alguna_pagina(g):
+        return paginas_sku.tiene_pagina(g, indice_sku) or tiene_pagina_prehecha(g, indice_prehechas)
+
     todos_los_grupos = [g for _, _, gs in buckets for g in gs]
-    con_pagina_sku = [g for g in todos_los_grupos if paginas_sku.tiene_pagina(g, indice_sku)]
-    faltantes = [g for g in todos_los_grupos
-                 if not paginas_sku.tiene_pagina(g, indice_sku)
-                 and not tiene_pagina_prehecha(g, indice_prehechas)]
-    log(f"  📄 {len(con_pagina_sku)} con página en assets/paginas, "
-        f"{len(faltantes)} se generan dinámicamente (columna K)")
+    faltantes = [g for g in todos_los_grupos if not _tiene_alguna_pagina(g)]
+    con_pagina = len(todos_los_grupos) - len(faltantes)
+
+    if faltantes:
+        detalle = ", ".join(
+            f"{g.get('grupo_foto')}[{'/'.join(str(s.get('sku')) for s in g.get('skus', []))}]"
+            for g in faltantes[:40]
+        )
+        log(f"  ⚠️ {len(faltantes)} producto(s) SIN página en assets/paginas: {detalle}"
+            + (" ..." if len(faltantes) > 40 else ""))
+
+    if not dinamico_si_falta and faltantes:
+        # Por defecto NO se descargan imágenes: se omiten los productos sin página
+        # (así el catálogo se arma solo con las páginas listas y nunca se cuelga
+        # esperando descargas). Los que faltan quedan logueados arriba para que
+        # agregues su página a assets/paginas y vuelvas a generar.
+        omitidos_gf = {id(g) for g in faltantes}
+        buckets = [(k, lbl, [g for g in gs if id(g) not in omitidos_gf])
+                   for (k, lbl, gs) in buckets]
+        buckets = [(k, lbl, gs) for (k, lbl, gs) in buckets if gs]
+        log(f"  🚫 {len(faltantes)} producto(s) omitido(s) por no tener página "
+            f"(usa dinamico_si_falta=True para generarlos descargando la foto).")
+
+    total_grupos = sum(len(gs) for _, _, gs in buckets)
+    if total_grupos == 0:
+        raise ValueError(
+            f"Ningún producto de '{cfg_catalogo['nombre']}' tiene página en "
+            f"assets/paginas. Revisa que los nombres de archivo incluyan el "
+            f"Grupo_Foto o el SKU del Excel."
+        )
+    log(f"  📄 {con_pagina} con página en assets/paginas"
+        + (f"; {len(faltantes)} sin página" if faltantes else ""))
     prog(25)
 
     # 4) Config de marca: colores + fuentes reales (Kanit/Sora) + logo
@@ -295,6 +325,7 @@ def generar_catalogo(
     log("💾 Guardando PDF...")
     c.save()
     prog(100)
-    log(f"✅ Catálogo generado: {total_grupos} productos "
-        f"({total_grupos - len(faltantes)} pre-hechos, {len(faltantes)} dinámicos)")
+    _msg_falta = (f", {len(faltantes)} omitido(s) sin página" if (faltantes and not dinamico_si_falta)
+                  else (f", {len(faltantes)} dinámico(s)" if faltantes else ""))
+    log(f"✅ Catálogo generado: {total_grupos} página(s){_msg_falta}")
     return ruta_salida

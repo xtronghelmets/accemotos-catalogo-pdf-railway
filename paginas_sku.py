@@ -76,16 +76,32 @@ def _tokens_archivo(nombre):
     return grupo, skus
 
 
+def _norm_grupo(g):
+    """Normaliza un Grupo_Foto para comparar sin importar guiones/espacios/caso:
+    'G-352' / 'g 352' / 'G352' -> 'G352'."""
+    return re.sub(r'[^A-Z0-9]', '', str(g or '').upper())
+
+
+def _norm_sku(s):
+    """Normaliza un SKU a string entero cuando es numérico ('17222.0' -> '17222')."""
+    s = str(s or '').strip()
+    if not s:
+        return ''
+    try:
+        return str(int(float(s)))
+    except (TypeError, ValueError):
+        return s
+
+
 def construir_indice_paginas(carpeta_paginas, callback_log=None):
-    """Escanea assets/paginas/ y arma dos índices:
-        'grupo': Grupo_Foto (mayúsculas) -> ruta_jpg
-        'sku':   SKU (str)               -> ruta_jpg
-    Devuelve {'grupo': {...}, 'sku': {...}}."""
+    """Escanea assets/paginas/ y arma índices para localizar la página de un
+    grupo por Grupo_Foto (exacto o normalizado) o por cualquier SKU.
+    Devuelve {'grupo': {...}, 'grupo_norm': {...}, 'sku': {...}}."""
     def log(m):
         if callback_log:
             callback_log(m)
 
-    idx = {'grupo': {}, 'sku': {}}
+    idx = {'grupo': {}, 'grupo_norm': {}, 'sku': {}}
     if not os.path.isdir(carpeta_paginas):
         log(f"  ⚠️ No existe carpeta de páginas: {carpeta_paginas}")
         return idx
@@ -96,10 +112,11 @@ def construir_indice_paginas(carpeta_paginas, callback_log=None):
             continue
         ruta = os.path.join(carpeta_paginas, f)
         grupo, skus = _tokens_archivo(f)
-        if grupo and grupo not in idx['grupo']:
-            idx['grupo'][grupo] = ruta
+        if grupo:
+            idx['grupo'].setdefault(grupo, ruta)
+            idx['grupo_norm'].setdefault(_norm_grupo(grupo), ruta)
         for s in skus:
-            idx['sku'].setdefault(s, ruta)
+            idx['sku'].setdefault(_norm_sku(s), ruta)
         n += 1
     log(f"  🗂️ assets/paginas: {n} páginas indexadas "
         f"({len(idx['grupo'])} grupos, {len(idx['sku'])} SKUs)")
@@ -107,13 +124,17 @@ def construir_indice_paginas(carpeta_paginas, callback_log=None):
 
 
 def buscar_pagina(grupo, indice):
-    """Devuelve la ruta de la página del grupo (por Grupo_Foto, o por cualquier
-    SKU del grupo), o None si no existe."""
+    """Devuelve la ruta de la página del grupo, buscando en orden:
+    Grupo_Foto exacto → Grupo_Foto normalizado → cualquier SKU del grupo.
+    Devuelve None si no existe."""
     gf = str(grupo.get('grupo_foto') or '').upper()
     if gf and gf in indice['grupo']:
         return indice['grupo'][gf]
+    gn = _norm_grupo(gf)
+    if gn and gn in indice.get('grupo_norm', {}):
+        return indice['grupo_norm'][gn]
     for s in grupo.get('skus', []):
-        r = indice['sku'].get(str(s.get('sku')))
+        r = indice['sku'].get(_norm_sku(s.get('sku')))
         if r:
             return r
     return None
