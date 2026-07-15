@@ -144,11 +144,44 @@ def tiene_pagina(grupo, indice):
     return buscar_pagina(grupo, indice) is not None
 
 
+# ── Reducción de imagen (evita OOM en Railway al embeber 3001x5334) ──────────
+# Altura objetivo de la página embebida (~2x del PDF de 1060 pt). Reduce el uso
+# de memoria de ~48 MB por imagen (a resolución completa) a unos pocos MB.
+ALTO_PAGINA_EMBEBIDA = 2120
+
+def _preparar_pagina(ruta, carpeta_cache, log=lambda m: None):
+    """Reduce la página a ALTO_PAGINA_EMBEBIDA px de alto y la deja en caché
+    como JPEG liviano; reportlab luego embebe ese JPEG (poca RAM). Si algo
+    falla, devuelve la ruta original."""
+    try:
+        os.makedirs(carpeta_cache, exist_ok=True)
+        base = os.path.splitext(os.path.basename(ruta))[0]
+        destino = os.path.join(carpeta_cache, base + '_r.jpg')
+        if os.path.exists(destino) and os.path.getsize(destino) > 1000:
+            return destino
+        from PIL import Image
+        im = Image.open(ruta)
+        if im.mode not in ('RGB', 'L'):
+            im = im.convert('RGB')
+        if im.height > ALTO_PAGINA_EMBEBIDA:
+            w = max(1, int(im.width * ALTO_PAGINA_EMBEBIDA / im.height))
+            im = im.resize((w, ALTO_PAGINA_EMBEBIDA), Image.LANCZOS)
+        im.save(destino, 'JPEG', quality=88, optimize=True)
+        try:
+            im.close()
+        except Exception:
+            pass
+        return destino
+    except Exception as e:
+        log(f"  ⚠️ No pude reducir {os.path.basename(ruta)}: {e}")
+        return ruta
+
+
 # ── Dibujo / estampado ───────────────────────────────────────────────────────
 
 def dibujar_pagina_sku(c, cfg, grupo, ruta_pagina,
                        mostrar_precio_mayor=False, mostrar_precio_detal=False,
-                       num=None, total=None, callback_log=None):
+                       num=None, total=None, carpeta_cache=None, callback_log=None):
     """Dibuja la página pre-armada full-bleed y estampa precio + tabla
     talla/código/inventario + número de página, usando los datos del Excel."""
     import generador_web as gw
@@ -158,11 +191,14 @@ def dibujar_pagina_sku(c, cfg, grupo, ruta_pagina,
             callback_log(m)
 
     page_w, page_h = gw.PAGE_W, gw.PAGE_H
+    carpeta_cache = carpeta_cache or '/tmp/paginas_render'
 
-    # 1) Página full-bleed (estirada al tamaño del PDF, sin preservar aspecto,
-    #    igual que portadas — el lienzo del diseñador es full-bleed).
+    # 1) Página full-bleed. Se reduce a un JPEG liviano y se embebe POR RUTA
+    #    (reportlab incrusta el JPEG directo, sin decodificar a RAM), para no
+    #    agotar la memoria de Railway al procesar decenas de páginas.
+    ruta_embeber = _preparar_pagina(ruta_pagina, carpeta_cache, log)
     try:
-        c.drawImage(ImageReader(ruta_pagina), 0, 0, page_w, page_h,
+        c.drawImage(ruta_embeber, 0, 0, page_w, page_h,
                     preserveAspectRatio=False)
     except Exception as e:
         log(f"  ⚠️ No se pudo dibujar {os.path.basename(ruta_pagina)}: {e}")

@@ -290,7 +290,9 @@ def generar_catalogo(
                     c, cfg, grupo, ruta_pagina_sku,
                     mostrar_precio_mayor=mostrar_precio_mayor,
                     mostrar_precio_detal=mostrar_precio_detal,
-                    num=idx, total=total_grupos, callback_log=log,
+                    num=idx, total=total_grupos,
+                    carpeta_cache=os.path.join(carpeta_cache, 'paginas_render'),
+                    callback_log=log,
                 )
             elif tiene_pagina_prehecha(grupo, indice_prehechas):
                 dibujar_pagina_prehecha(
