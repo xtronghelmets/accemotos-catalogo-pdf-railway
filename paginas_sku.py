@@ -223,12 +223,28 @@ def dibujar_pagina_sku(c, cfg, grupo, ruta_pagina,
             fs=fs,
         )
 
-    # 3) Tabla talla / código / inventario (siempre), en la zona inferior.
+    # 3) Tabla código / inventario (+ talla o capacidad), en la zona inferior.
     filas = [
         {'talla': s.get('talla', ''), 'codigo': s.get('sku'),
          'inventario': s.get('inventario'), 'nombre': s.get('nombre_producto', '')}
         for s in grupo.get('skus', [])
     ]
+    # Decidir la fila superior de la tabla:
+    #  - Maleteros / capacidades (ej. '45L', '60L') -> etiqueta 'CAPACIDAD'.
+    #  - Productos sin talla ('Sin talla' -> '') -> NO se dibuja esa fila.
+    #  - Resto -> 'TALLA'.
+    tallas_no_vacias = [str(s.get('talla') or '').strip()
+                        for s in grupo.get('skus', []) if str(s.get('talla') or '').strip()]
+    subcat = (grupo.get('subcategoria') or '').lower()
+    es_capacidad = ('maletero' in subcat
+                    or any(re.match(r'^\d+\s*L$', t, re.IGNORECASE) for t in tallas_no_vacias))
+    if es_capacidad:
+        etiqueta_talla, mostrar_fila_talla = 'CAPACIDAD', True
+    elif not tallas_no_vacias:
+        etiqueta_talla, mostrar_fila_talla = 'TALLA', False
+    else:
+        etiqueta_talla, mostrar_fila_talla = 'TALLA', True
+
     if filas:
         _, y_top_tabla = _img_a_pdf(0, TABLA_Y_TOP_IMG, page_w, page_h)
         gw.dibujar_tabla_maestra(
@@ -236,6 +252,7 @@ def dibujar_pagina_sku(c, cfg, grupo, ruta_pagina,
             x_center=page_w / 2, max_width=page_w - 40, escala=TABLA_ESCALA,
             mostrar_color=False, marcar_adicionales=True,
             precios_debajo=False,   # los precios ya se pintaron arriba
+            etiqueta_talla=etiqueta_talla, mostrar_fila_talla=mostrar_fila_talla,
         )
 
     # 4) Número de página

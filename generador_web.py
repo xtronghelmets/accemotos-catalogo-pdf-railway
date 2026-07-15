@@ -476,7 +476,8 @@ def dibujar_tabla_maestra(c, cfg, y_top, filas, x_center=None, max_width=None,
                           color_hex_str=None, marcar_adicionales=True,
                           precio_mayor=None, precio_detal=None,
                           mostrar_precio_mayor=False, mostrar_precio_detal=False,
-                          precios_debajo=True):
+                          precios_debajo=True,
+                          etiqueta_talla='TALLA', mostrar_fila_talla=True):
     """
     Tabla UNIFICADA talla/código/inventario. Reemplaza cualquier estampado de
     celdas sueltas: recibe TODAS las variaciones del grupo y las dibuja como
@@ -562,8 +563,9 @@ def dibujar_tabla_maestra(c, cfg, y_top, filas, x_center=None, max_width=None,
                 txt = txt + '*'
             c.drawCentredString(cx + col_w / 2, y + dy, txt[:11])
 
-    _fila('TALLA', lambda x: (_norm_talla(x['talla']) or '-'),
-          prin, white, acen, prin, 'Helvetica-Bold', marca_col=True)
+    if mostrar_fila_talla:
+        _fila(etiqueta_talla, lambda x: (_norm_talla(x['talla']) or '-'),
+              prin, white, acen, prin, 'Helvetica-Bold', marca_col=True)
     _fila('CÓDIGO', lambda x: x['codigo'],
           HexColor('#F0F0F0'), HexColor('#333333'),
           HexColor('#F8F8F8'), HexColor('#333333'), 'Helvetica', marca_col=False)
@@ -571,7 +573,8 @@ def dibujar_tabla_maestra(c, cfg, y_top, filas, x_center=None, max_width=None,
           HexColor('#F0F0F0'), HexColor('#333333'),
           HexColor('#F8F8F8'), HexColor('#333333'), 'Helvetica', marca_col=False)
 
-    total_h = (col_h if (mostrar_color and color_nombre) else 0) + row_h * 3
+    n_filas = 3 if mostrar_fila_talla else 2
+    total_h = (col_h if (mostrar_color and color_nombre) else 0) + row_h * n_filas
     y_bottom = y_top - total_h
     if y_bottom >= 8:
         c.setStrokeColor(HexColor('#DDDDDD')); c.setLineWidth(0.5)
@@ -579,8 +582,8 @@ def dibujar_tabla_maestra(c, cfg, y_top, filas, x_center=None, max_width=None,
 
     y_final = y_bottom
 
-    # Leyenda de adicionales
-    if hay_adic:
+    # Leyenda de adicionales (solo aplica si se mostró la fila de talla)
+    if hay_adic and mostrar_fila_talla:
         y_final -= 10 * escala
         c.setFillColor(HexColor('#666666'))
         c.setFont('Helvetica-Oblique', max(6.0, 7.5 * escala))
