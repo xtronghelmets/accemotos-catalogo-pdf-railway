@@ -3,109 +3,77 @@
 categorias_config.py
 
 Fuente única de verdad para:
-- Cómo se normaliza la columna Categoria del Excel maestro hacia "buckets" comerciales.
-- En qué orden aparecen esos buckets dentro de cada PDF.
-- Cómo se reparten los buckets entre los catálogos de XTRONG (3 PDFs) y XECURO (1 PDF).
-- Qué categorías se excluyen por completo (repuestos sueltos, visores).
+- Cómo se decide, a partir de la columna I del Excel ("categoria catalogo") y
+  la marca, EN CUÁL de los 4 catálogos (botones del front) cae cada producto.
+- Cómo se ordenan las secciones (subcategorías, columna J) dentro de cada PDF.
+
+Diseño (nuevo Excel data/data.xlsx, hoja "Hoja Catalogo"):
+
+    Columna I  → "categoria catalogo"  → define el catálogo/botón:
+        · XTRONG + 'cascos integrales'          → xtrong_integrales
+        · XTRONG + 'otros cascos'               → xtrong_otros_cascos
+        · XTRONG + 'accesorios y complementos'  → xtrong_accesorios
+        · XECURO + (cualquiera)                 → xecuro_general
+
+    Columna J  → "subategoria Catalogo" → sección/encabezado DENTRO del PDF
+                 (Guantes, Chaquetas, Cascos Integrales, etc.). El orden final
+                 lo fija ORDEN_SUBCATEGORIA.
 
 Editar este archivo es la única forma en que debería cambiar la organización
-de los catálogos — el resto del código (lector_maestro.py, generador_web.py)
-no debe tener nombres de categorías "quemados".
+de los catálogos — el resto del código no debe tener nombres "quemados".
 """
+import unicodedata
 
-# ── Buckets comerciales (claves internas estables) ─────────────────────────
-# Las claves nunca cambian aunque cambie el texto que se muestra en el PDF.
 
-CASCOS_INTEGRALES = 'cascos_integrales'
-CASCOS_ABATIBLES  = 'cascos_abatibles'
-CASCOS_ABIERTOS   = 'cascos_abiertos'
-CASCOS_CROSS      = 'cascos_cross'          # Cross / Enduro / Multipropósito
-IMPERMEABLES      = 'impermeables'
-GUANTES           = 'guantes'
-CHAQUETAS         = 'chaquetas'
-BOTAS             = 'botas'
-PROTECCION        = 'proteccion'            # rodilleras, coderas, body armor
-INTERCOMUNICADORES = 'intercomunicadores'
-MALETEROS         = 'maleteros'
-GAFAS             = 'gafas'
-CANDADOS          = 'candados'
-ACCESORIOS        = 'accesorios'
-COMPLEMENTOS      = 'complementos'
+# ── Los 4 catálogos = 4 botones del front ────────────────────────────────────
+# (id, nombre_display, marca). El id es estable aunque cambie el texto.
 
-BUCKET_LABELS = {
-    CASCOS_INTEGRALES:  'Integrales',
-    CASCOS_ABATIBLES:   'Abatibles',
-    CASCOS_ABIERTOS:    'Abiertos',
-    CASCOS_CROSS:       'Cross / Enduro / Multipropósito',
-    IMPERMEABLES:       'Impermeables',
-    GUANTES:            'Guantes',
-    CHAQUETAS:          'Chaquetas',
-    BOTAS:              'Botas',
-    PROTECCION:         'Protección',
-    INTERCOMUNICADORES: 'Intercomunicadores',
-    MALETEROS:          'Maleteros',
-    GAFAS:              'Gafas',
-    CANDADOS:           'Candados',
-    ACCESORIOS:         'Accesorios',
-    COMPLEMENTOS:       'Complementos',
-}
-
-# Buckets que corresponden a "tipo de casco" (tienen su propio sub-orden
-# dentro de la categoría Cascos). El resto son buckets planos.
-BUCKETS_CASCO = [CASCOS_INTEGRALES, CASCOS_ABATIBLES, CASCOS_ABIERTOS, CASCOS_CROSS]
-
-# ── Mapeo Categoria (texto crudo del Excel, en minúsculas y sin espacios
-#    extra) → bucket. Incluye las variantes con typo que aparecen en los
-#    datos reales (mecnismos, spiler) para que no se cuelen como huérfanas. ──
-CATEGORIA_A_BUCKET = {
-    'integral':            CASCOS_INTEGRALES,
-    'abatible':             CASCOS_ABATIBLES,
-    'abierto':              CASCOS_ABIERTOS,
-    'multiproposito':       CASCOS_CROSS,
-    'impermeables':         IMPERMEABLES,
-    'guantes':               GUANTES,
-    'chaquetas':             CHAQUETAS,
-    'botas':                 BOTAS,
-    'rodilleras':            PROTECCION,
-    'body armor':            PROTECCION,
-    'intercomunicadores':    INTERCOMUNICADORES,
-    'maleteros':             MALETEROS,
-    'gafas':                 GAFAS,
-    'candados':              CANDADOS,
-    'accesorios':            ACCESORIOS,
-    'complementos':          COMPLEMENTOS,
-}
-
-# Categorías que se excluyen por completo de la generación de catálogos
-# (repuestos sueltos y visores, por decisión explícita del negocio).
-CATEGORIAS_EXCLUIDAS = {
-    'mecanismo', 'mecnismos', 'spiler', 'spoiler',
-    'tapas', 'tornillos', 'sistemas', 'visor',
+CATALOGOS = {
+    'xecuro_general': {
+        'marca':  'xecuro',
+        'nombre': 'XECURO — Catálogo general',
+    },
+    'xtrong_integrales': {
+        'marca':  'xtrong',
+        'nombre': 'XTRONG — Cascos integrales (cerrados)',
+    },
+    'xtrong_otros_cascos': {
+        'marca':  'xtrong',
+        'nombre': 'XTRONG — Otros cascos (abiertos, cross, abatibles)',
+    },
+    'xtrong_accesorios': {
+        'marca':  'xtrong',
+        'nombre': 'XTRONG — Accesorios y complementos',
+    },
 }
 
 
-def normalizar_categoria(valor_crudo):
-    """
-    Convierte el texto crudo de la columna Categoria en un bucket interno.
-    Devuelve None si la categoría está excluida o no se reconoce
-    (no reconocida = se trata igual que excluida, pero se loguea aparte
-    para que el usuario la revise).
-    """
-    if not valor_crudo:
-        return None
-    limpio = str(valor_crudo).strip().lower()
-    if limpio in CATEGORIAS_EXCLUIDAS:
-        return None
-    return CATEGORIA_A_BUCKET.get(limpio)  # None si no está mapeada
+# ── Normalización de texto (para comparar sin tildes/mayúsculas/espacios) ─────
+
+def _norm(s):
+    if s is None:
+        return ''
+    s = str(s).strip().lower()
+    s = ''.join(c for c in unicodedata.normalize('NFD', s)
+                if unicodedata.category(c) != 'Mn')
+    return ' '.join(s.split())  # colapsa espacios múltiples
 
 
-# ── Normalización de Marca ──────────────────────────────────────────────────
+# ── Columna I ("categoria catalogo") → catálogo, para XTRONG ─────────────────
+# Para XECURO todo va al único catálogo general, sin importar la columna I.
+
+CATEGORIA_CATALOGO_XTRONG = {
+    'cascos integrales':        'xtrong_integrales',
+    'otros cascos':             'xtrong_otros_cascos',
+    'accesorios y complementos': 'xtrong_accesorios',
+}
+
 
 def normalizar_marca(valor_crudo):
     """
-    Devuelve 'xtrong', 'xecuro', o None (marca ambigua / vacía / 'Sin marca').
-    Trata 'XECURO PRO' como xecuro y 'XTRONG GP' como xtrong: son líneas de
-    la marca base, no marcas distintas.
+    Devuelve 'xtrong', 'xecuro', o None (marca ambigua / vacía).
+    Trata 'XECURO PRO' / 'XECURO-PRO' como xecuro y 'XTRONG GP' como xtrong:
+    son líneas de la marca base, no marcas distintas.
     """
     if not valor_crudo:
         return None
@@ -114,59 +82,65 @@ def normalizar_marca(valor_crudo):
         return 'xtrong'
     if limpio.startswith('xecuro'):
         return 'xecuro'
-    return None  # 'sin marca', vacío, o cualquier otra cosa no reconocida
+    return None
 
 
-# ── Estructura de catálogos ──────────────────────────────────────────────────
-# Cada catálogo es: (id, nombre_display, marca, lista_de_buckets_en_orden)
-# El orden de la lista de buckets ES el orden final en el PDF.
+def catalogo_asignado(marca, categoria_catalogo):
+    """
+    Decide en qué catálogo (id de CATALOGOS) cae un producto a partir de su
+    marca normalizada y el texto de la columna I. Devuelve None si no aplica.
 
-ORDEN_BUCKETS_XECURO = [
-    CASCOS_INTEGRALES, CASCOS_ABATIBLES, CASCOS_ABIERTOS, CASCOS_CROSS,
-    IMPERMEABLES, GUANTES, CHAQUETAS, BOTAS, PROTECCION,
-    INTERCOMUNICADORES, MALETEROS, GAFAS, CANDADOS, ACCESORIOS, COMPLEMENTOS,
+    - XECURO: siempre 'xecuro_general' (un solo catálogo para la marca).
+    - XTRONG: según la columna I (integrales / otros cascos / accesorios).
+    - Marca None: se infiere de la columna I (las categorías de casco XTRONG
+      van a XTRONG; el resto, a XECURO general).
+    """
+    cat = _norm(categoria_catalogo)
+
+    if marca == 'xecuro':
+        return 'xecuro_general'
+    if marca == 'xtrong':
+        return CATEGORIA_CATALOGO_XTRONG.get(cat)
+
+    # Marca no reconocida: inferir por la columna I para no perder el producto.
+    if cat in ('cascos integrales', 'otros cascos'):
+        return CATEGORIA_CATALOGO_XTRONG.get(cat)
+    return 'xecuro_general'
+
+
+# ── Orden de secciones (columna J) dentro de cada PDF ────────────────────────
+# El texto de la columna J se usa TAL CUAL como encabezado de sección. Esta
+# lista solo fija el ORDEN; las subcategorías no listadas van al final, en
+# orden alfabético. Se compara normalizado (sin tildes/mayúsculas).
+
+ORDEN_SUBCATEGORIA = [
+    # Cascos
+    'cascos integrales',
+    'cascos',
+    'cascos abatibles',
+    'cascos multiproposito',
+    'cascos abiertos',
+    # Accesorios y complementos
+    'guantes',
+    'chaquetas',
+    'impermeables',
+    'body armors',
+    'rodilleras',
+    'intercomunicadores',
+    'candados',
+    'antiempanantes',
+    'bases maletero',
 ]
 
-ORDEN_BUCKETS_XTRONG_PDF2 = [CASCOS_ABIERTOS, CASCOS_CROSS, CASCOS_ABATIBLES]
 
-ORDEN_BUCKETS_XTRONG_PDF3 = [
-    IMPERMEABLES, GUANTES, CHAQUETAS, BOTAS, PROTECCION,
-    INTERCOMUNICADORES, MALETEROS, GAFAS, CANDADOS, ACCESORIOS, COMPLEMENTOS,
-]
-
-CATALOGOS = {
-    'xecuro_general': {
-        'marca':   'xecuro',
-        'nombre':  'XECURO — Catálogo general',
-        'buckets': ORDEN_BUCKETS_XECURO,
-    },
-    'xtrong_integrales': {
-        'marca':   'xtrong',
-        'nombre':  'XTRONG — Cascos integrales (cerrados)',
-        'buckets': [CASCOS_INTEGRALES],
-    },
-    'xtrong_otros_cascos': {
-        'marca':   'xtrong',
-        'nombre':  'XTRONG — Otros cascos (abiertos, cross, abatibles)',
-        'buckets': ORDEN_BUCKETS_XTRONG_PDF2,
-    },
-    'xtrong_accesorios': {
-        'marca':   'xtrong',
-        'nombre':  'XTRONG — Accesorios y complementos',
-        'buckets': ORDEN_BUCKETS_XTRONG_PDF3,
-    },
-}
+def orden_subcategoria(subcategoria):
+    """Clave de orden para una subcategoría (columna J)."""
+    n = _norm(subcategoria)
+    if n in ORDEN_SUBCATEGORIA:
+        return (0, ORDEN_SUBCATEGORIA.index(n), n)
+    return (1, 0, n)  # desconocidas al final, alfabético
 
 
 def catalogos_de_marca(marca):
     """Devuelve [(catalogo_id, config), ...] para una marca dada."""
     return [(k, v) for k, v in CATALOGOS.items() if v['marca'] == marca]
-
-
-def bucket_de(marca, categoria_bucket):
-    """Encuentra en qué catálogo(s) de esa marca cae un bucket dado."""
-    resultado = []
-    for cat_id, cfg in catalogos_de_marca(marca):
-        if categoria_bucket in cfg['buckets']:
-            resultado.append(cat_id)
-    return resultado
