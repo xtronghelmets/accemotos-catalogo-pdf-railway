@@ -719,6 +719,15 @@ def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None,
             if periodo_txt:
                 c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
                 c.drawRightString(x_right, y_base, periodo_txt)
+                y_base -= 12
+            # Fecha de última actualización de inventario (clara, para verse sobre
+            # el fondo oscuro de la portada XECURO)
+            if fecha_actualizacion:
+                c.setFillColor(HexColor('#DDDDDD'))
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 6.5)
+                c.drawRightString(
+                    x_right, y_base,
+                    f'Última actualización de inventario: {fecha_actualizacion}')
 
 
 # ── Página de producto ────────────────────────────────────────────────────────
