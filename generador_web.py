@@ -1,0 +1,1046 @@
+"""
+generador_web.py  v2
+Motor PDF con diseño fiel a PLANTILLA_HOJA.png:
+- Header con fondo de color + polígono blanco esquina der. con logo
+- Nombre producto arriba izquierda
+- Resumen descripción bajo el nombre
+- Certificación DOT/ECE en esquina superior derecha bajo el logo
+- Imagen de perfil centrada (sin frontal)
+- Tabla inferior: circulo color + nombre, fila TALLA/CÓDIGO/INVENTARIO
+- Portada y contraportada según tipo de catálogo
+- Período en portada esquina superior derecha bajo logo
+"""
+import os
+import re
+import textwrap
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
+from reportlab.pdfgen import canvas
+from reportlab.lib.colors import HexColor, white, black
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from PIL import Image as PILImage
+
+from descargador import descargar_imagen
+from lector_excel import color_hex
+
+# ── Config por marca ─────────────────────────────────────────────────────────
+MARCAS_CONFIG = {
+    'xtrong': {
+        'color_principal': '#005654',
+        'color_acento':    '#B6FF00',
+        'color_texto':     '#000000',
+        'color_precio':    '#444444',
+        'font_titulo':     'Helvetica-Bold',
+        'font_cuerpo':     'Helvetica',
+        'font_italic':     'Helvetica-BoldOblique',
+        'nombre_display':  'XTRONG',
+    },
+    'xecuro': {
+        'color_principal': '#303830',
+        'color_acento':    '#FFAD40',
+        'color_secundario':'#515949',
+        'color_beige':     '#E5E0D8',
+        'color_texto':     '#000000',
+        'color_precio':    '#515949',
+        'font_titulo':     'Helvetica-Bold',
+        'font_cuerpo':     'Helvetica',
+        'font_italic':     'Helvetica-BoldOblique',
+        'nombre_display':  'XECURO',
+    },
+}
+
+# Portadas y contraportadas por tipo de catálogo
+ASSETS_POR_TIPO = {
+    # XTRONG — nombres exactos como están en assets/xtrong/
+    'abatibles_abiertos': {
+        'portada':       'PORTADA ABATIBLES-ABIERTOS.png',
+        'contraportada': 'CONTRAPORTADA ABATIBLES-ABIERTOS.png',
+        'pagina_bg':     'PLANTILLA HOJA.png',
+        'pagina_bg_pro': None,
+    },
+    'integrales': {
+        'portada':       'PORTADA INTEGRALES.png',
+        'contraportada': 'CONTRA PORTADA INTEGRALES.png',
+        'pagina_bg':     'PLANTILLA HOJA.png',
+        'pagina_bg_pro': None,
+    },
+    'textiles_accesorios': {
+        'portada':       'PORTADA TEXTILES Y ACCESORIOS.png',
+        'contraportada': 'CONTRA PORTADA TEXTILES Y ACCESORIOS.png',
+        'pagina_bg':     'PLANTILLA HOJA.png',
+        'pagina_bg_pro': None,
+    },
+    # XECURO — nombres exactos como están en assets/xecuro/
+    'cascos': {
+        'portada':       'PORTADA XECURO.png',
+        'contraportada': 'CONTRAPORTADA XECURO.png',
+        'pagina_bg':     'PÁGINA XECURO.png',
+        'pagina_bg_pro': 'PÁGINA XECURO PRO.png',
+    },
+    'impermeables': {
+        'portada':       'PORTADA XECURO.png',
+        'contraportada': 'CONTRAPORTADA XECURO.png',
+        'pagina_bg':     'PÁGINA XECURO.png',
+        'pagina_bg_pro': 'PÁGINA XECURO PRO.png',
+    },
+    'intercomunicadores': {
+        'portada':       'PORTADA XECURO.png',
+        'contraportada': 'CONTRAPORTADA XECURO.png',
+        'pagina_bg':     'PÁGINA XECURO.png',
+        'pagina_bg_pro': 'PÁGINA XECURO PRO.png',
+    },
+}
+
+# Logos de certificación
+# Assets de certificación — nombres exactos del repo
+CERT_ASSETS = {
+    'xtrong': {
+        'dot_ece': ['CERTIFICACIÓN DOT-ECE.png', 'CERTIFICACION DOT-ECE.png',
+                    'CERTIFICACIÓN_DOT-ECE.png', 'CERTIFICACIÓN_DOTECE.png'],
+        'dot':     ['CERTIFICACIÓN DOT.png', 'CERTIFICACION DOT.png',
+                    'CERTIFICACIÓN_DOT.png'],
+    },
+    'xecuro': {
+        'dot_ece': ['ÍCONO DOT.png', 'ICONO DOT.png', 'ÍCONO_DOT.png'],
+        'dot':     ['ÍCONO DOT.png', 'ICONO DOT.png', 'ÍCONO_DOT.png'],
+    },
+}
+
+PAGE_W, PAGE_H = 595, 1060
+
+# Cuánto baja el bloque de precio bajo el nombre en páginas dinámicas (Woo).
+# Súbelo para bajar más el precio; bájalo para acercarlo al nombre.
+PRECIO_DYN_OFFSET_Y = 30
+HEADER_H       = 50
+TABLA_ROW_H    = 24
+TABLA_COLOR_H  = 22    # encabezado de color
+
+
+def _hx(s):
+    return HexColor(s)
+
+
+def _buscar_asset(carpeta, fname):
+    """Busca asset probando guion bajo, espacios, sin tildes, distintas extensiones.
+    Función de módulo (antes vivía anidada en generar_pdf_desde_productos) para
+    que orquestador.py también pueda resolver rutas de assets de forma idéntica."""
+    import unicodedata
+    def sin_tildes(s):
+        return ''.join(c for c in unicodedata.normalize('NFD', s)
+                      if unicodedata.category(c) != 'Mn')
+    base, ext_orig = fname.rsplit('.', 1) if '.' in fname else (fname, 'png')
+    candidatos = []
+    for base_v in [base, base.replace('_', ' '), sin_tildes(base), sin_tildes(base).replace('_', ' ')]:
+        for ext in [ext_orig, 'png', 'jpg', 'jpeg', 'PNG', 'JPG']:
+            candidatos.append(f"{base_v}.{ext}")
+    if os.path.isdir(carpeta):
+        archivos = os.listdir(carpeta)
+        base_norm = sin_tildes(base.replace('_', '').replace(' ', '')).upper()
+        for archivo in archivos:
+            arch_norm = sin_tildes(archivo.replace('_', '').replace(' ', '')).upper()
+            arch_norm = arch_norm.rsplit('.', 1)[0] if '.' in arch_norm else arch_norm
+            if arch_norm == base_norm:
+                candidatos.insert(0, archivo)
+    for cand in candidatos:
+        path = os.path.join(carpeta, cand)
+        if os.path.exists(path):
+            return path
+    return os.path.join(carpeta, fname)
+
+
+def _cargar_image_reader_seguro(path, nombre, log=None, timeout_seg=8):
+    """Carga ImageReader con timeout. Prefiere _opt.jpg si existe.
+
+    IMPORTANTE: no confía en la extensión del archivo. Algunos "_opt.jpg"
+    de este repo resultaron ser en realidad PNG con canal alpha (transparencia)
+    guardados con extensión .jpg por error de exportación. Si se cargan
+    directo, ReportLab pinta los píxeles crudos bajo el canal alpha — que en
+    estos archivos son negros — produciendo fondos negros sólidos donde
+    debería verse blanco/transparente. Por eso siempre se hace un `probe`
+    del modo real con PIL antes de decidir el camino rápido vs. aplanado."""
+    def _log(m):
+        if log:
+            log(m)
+
+    if not path or not os.path.exists(path):
+        _log(f"  ⚠️ No existe: {nombre} ({path})")
+        return None
+
+    base, _ext = os.path.splitext(path)
+    opt_path = base + '_opt.jpg'
+    ruta_real = opt_path if (os.path.exists(opt_path) and os.path.getsize(opt_path) > 1000) else path
+
+    from PIL import Image as _PIL
+    try:
+        with _PIL.open(ruta_real) as probe:
+            modo = probe.mode
+    except Exception as e:
+        _log(f"  ⚠️ No se pudo leer {nombre} ({ruta_real}): {e}")
+        return None
+
+    if modo not in ('RGBA', 'LA', 'P'):
+        # Camino rápido real: la imagen es opaca de verdad (sin canal alpha),
+        # sin importar si el archivo "original" era PNG — se carga tal cual.
+        try:
+            reader = ImageReader(ruta_real)
+            _log(f"  ✅ {nombre} cargado ← {ruta_real} (modo {modo})")
+            return reader
+        except Exception as e:
+            _log(f"  ⚠️ Error cargando {nombre} ({ruta_real}): {e} — reintentando con PIL")
+
+    _log(f"  ℹ️ {nombre}: {ruta_real} tiene transparencia o falló directo "
+         f"(modo {modo}) — aplanando sobre blanco")
+
+    result = [None]
+    error  = [None]
+
+    def _cargar():
+        try:
+            from io import BytesIO
+            img = _PIL.open(ruta_real)
+            w, h = img.size
+            MAX = 1200
+            if max(w, h) > MAX:
+                if w >= h:
+                    img.thumbnail((MAX, int(h * MAX / w)), _PIL.LANCZOS)
+                else:
+                    img.thumbnail((int(w * MAX / h), MAX), _PIL.LANCZOS)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                fondo = _PIL.new('RGB', img.size, (255, 255, 255))
+                fondo.paste(img.convert('RGB'), mask=img.split()[-1])
+                img = fondo
+            else:
+                img = img.convert('RGB')
+            buf = BytesIO()
+            img.save(buf, 'JPEG', quality=88, optimize=True)
+            buf.seek(0)
+            result[0] = ImageReader(buf)
+        except Exception as e:
+            error[0] = str(e)
+
+    t = threading.Thread(target=_cargar, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seg)
+    if t.is_alive():
+        _log(f"  ⚠️ Timeout cargando {nombre} ({ruta_real}) — se usará fallback")
+        return None
+    if error[0]:
+        _log(f"  ⚠️ Error {nombre} ({ruta_real}): {error[0]}")
+        return None
+    _log(f"  ✅ {nombre} pre-cargado y aplanado sobre blanco ← {ruta_real}")
+    return result[0]
+
+
+# ── Header ───────────────────────────────────────────────────────────────────
+
+def _draw_header(c, cfg, categoria, logo_path=None):
+    y_bot = PAGE_H - HEADER_H
+
+    # Fondo principal
+    c.setFillColor(_hx(cfg['color_principal']))
+    c.rect(0, y_bot, PAGE_W, HEADER_H, fill=1, stroke=0)
+
+    # Polígono blanco esquina derecha
+    px_top = PAGE_W - 180
+    px_bot = PAGE_W - 195
+    c.setFillColor(white)
+    p = c.beginPath()
+    p.moveTo(px_top, PAGE_H)
+    p.lineTo(PAGE_W, PAGE_H)
+    p.lineTo(PAGE_W, y_bot)
+    p.lineTo(px_bot, y_bot)
+    p.close()
+    c.drawPath(p, fill=1, stroke=0)
+
+    # Línea acento
+    c.setStrokeColor(_hx(cfg['color_acento']))
+    c.setLineWidth(2)
+    c.line(px_bot, y_bot, PAGE_W, y_bot)
+
+    # Logo en polígono blanco
+    logo_area_x = px_top + 6
+    logo_area_w = PAGE_W - logo_area_x - 6
+    logo_area_h = HEADER_H - 8
+    logo_y      = y_bot + 4
+    if logo_path and os.path.exists(logo_path):
+        try:
+            img  = ImageReader(logo_path)
+            iw, ih = img.getSize()
+            ratio = iw / ih
+            dh = logo_area_h
+            dw = dh * ratio
+            if dw > logo_area_w:
+                dw = logo_area_w
+                dh = dw / ratio
+            lx = logo_area_x + (logo_area_w - dw) / 2
+            ly = logo_y + (logo_area_h - dh) / 2
+            c.drawImage(logo_path, lx, ly, dw, dh, mask='auto')
+        except Exception:
+            _draw_logo_texto(c, cfg, logo_area_x, PAGE_H - 4, PAGE_W - 6)
+    else:
+        _draw_logo_texto(c, cfg, logo_area_x, PAGE_H - 4, PAGE_W - 6)
+
+    # Categoría en zona verde
+    cat_text = categoria.title() if categoria.isupper() else categoria
+    c.setFillColor(white)
+    c.setFont(cfg['font_italic'], 16)
+    c.drawString(16, y_bot + 16, cat_text)
+
+
+def _draw_logo_texto(c, cfg, x_left, y_top, x_right):
+    c.setFillColor(_hx(cfg['color_principal']))
+    c.setFont('Helvetica-Bold', 15)
+    c.drawRightString(x_right - 6, y_top - 18, cfg['nombre_display'])
+    c.setFont('Helvetica-Bold', 8)
+    c.drawRightString(x_right - 6, y_top - 31, 'HELMETS & GEAR')
+
+
+# ── Zona de nombre + descripción ─────────────────────────────────────────────
+
+def _draw_nombre_zona(c, cfg, nombre, descripcion_corta='', precio=None, mostrar_precio=False):
+    """Dibuja nombre del producto en blanco, sin subtítulo. Devuelve y inferior."""
+    y_base = PAGE_H - HEADER_H - 12 + 40   # +40px hacia arriba
+    fs = 26 if len(nombre) < 22 else (20 if len(nombre) < 32 else 16)
+    fs = int(fs * 0.7)
+
+    c.setFillColor(white)
+    c.setFont(cfg['font_titulo'], fs)
+    c.drawString(16, y_base - fs, nombre)
+    y_cur = y_base - fs - 6
+
+    return y_cur - 8
+
+
+def _limpiar_html(texto):
+    texto = re.sub(r'<[^>]+>', ' ', texto)
+    texto = re.sub(r'&[a-z]+;', ' ', texto)
+    texto = re.sub(r'\s+', ' ', texto).strip()
+    return texto
+
+
+# ── Certificación ─────────────────────────────────────────────────────────────
+
+def _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets):
+    """Dibuja logo de certificación DOT/ECE usando _opt.jpg (rápido, sin cuelgue)."""
+    if not tiene_dot and not tiene_ece:
+        return
+
+    marca = cfg.get('_marca', 'xtrong')
+    cert_map = CERT_ASSETS.get(marca, CERT_ASSETS['xtrong'])
+    key = 'dot_ece' if (tiene_dot and tiene_ece) else 'dot'
+    fnames = cert_map.get(key, [])
+
+    # Buscar _opt.jpg primero, luego PNG original
+    opt_path = None
+    for fname in fnames:
+        base = os.path.splitext(fname)[0]
+        candidate_opt = os.path.join(carpeta_assets, base + '_opt.jpg')
+        candidate_png = os.path.join(carpeta_assets, fname)
+        if os.path.exists(candidate_opt):
+            opt_path = candidate_opt
+            break
+        elif os.path.exists(candidate_png):
+            opt_path = candidate_png
+            break
+
+    if not opt_path:
+        return
+
+    # Solo usar _opt.jpg (JPEG) — nunca PNG directo (cuelga ReportLab)
+    if opt_path.lower().endswith('.png'):
+        return  # Sin _opt.jpg disponible, no dibujar nada
+
+    # Zona superior izquierda, bajo el nombre del producto (área verde)
+    cert_w = 90
+    cert_h = 50
+    x = 16
+    y = PAGE_H - HEADER_H - cert_h - 45
+
+    try:
+        reader = ImageReader(opt_path)
+        iw, ih = reader.getSize()
+        ratio = iw / ih
+        dh = cert_h
+        dw = dh * ratio
+        if dw > cert_w:
+            dw = cert_w
+            dh = dw / ratio
+        c.drawImage(reader, x + (cert_w - dw)/2, y + (cert_h - dh)/2, dw, dh)
+    except Exception:
+        pass
+
+
+# ── Imagen ────────────────────────────────────────────────────────────────────
+
+def _es_foto_frontal(url_o_path):
+    """Heurística: si la URL contiene indicadores de vista frontal, es frontal."""
+    nombre = (url_o_path or '').lower()
+    indicadores = ['-front', '_front', '-frontal', '_frontal', '-adelante',
+                   '-frente', '_frente', 'front-', 'front_']
+    return any(ind in nombre for ind in indicadores)
+
+
+def _img_a_reader(img_path, timeout_seg=8):
+    """Abre img_path como ImageReader en memoria (JPEG) con timeout.
+    Evita que PIL o ReportLab se cuelguen con imágenes grandes."""
+    if not img_path or not os.path.exists(img_path):
+        return None, None, None
+    result = [None]
+    size   = [None]
+    def _cargar():
+        try:
+            img = PILImage.open(img_path)
+            iw, ih = img.size
+            MAX = 900
+            if max(iw, ih) > MAX:
+                img.thumbnail((MAX, MAX), PILImage.LANCZOS)
+                iw, ih = img.size
+            if img.mode in ('RGBA', 'LA', 'P'):
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                bg = PILImage.new('RGB', img.size, (255, 255, 255))
+                bg.paste(img.convert('RGB'), mask=img.split()[-1])
+                img = bg
+            else:
+                img = img.convert('RGB')
+            buf = BytesIO()
+            img.save(buf, 'JPEG', quality=82)
+            buf.seek(0)
+            result[0] = ImageReader(buf)
+            size[0] = (iw, ih)
+        except Exception:
+            pass
+    t = threading.Thread(target=_cargar, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seg)
+    if result[0] and size[0]:
+        return result[0], size[0][0], size[0][1]
+    return None, None, None
+
+
+def _draw_imagen(c, img_path, x, y_top, w, h_max):
+    y_bottom = y_top - h_max
+    if not img_path or not os.path.exists(img_path):
+        c.setFillColor(HexColor('#F8F8F8'))
+        c.setStrokeColor(HexColor('#E0E0E0'))
+        c.setLineWidth(0.5)
+        c.rect(x, y_bottom, w, h_max, fill=1, stroke=1)
+        return y_bottom
+    try:
+        reader, iw, ih = _img_a_reader(img_path)
+        if reader is None:
+            return y_bottom
+        ratio = iw / ih
+        if ratio >= w / h_max:
+            dw, dh = w, w / ratio
+        else:
+            dh, dw = h_max, h_max * ratio
+        dx = x + (w - dw) / 2
+        dy = y_bottom + (h_max - dh) / 2
+        c.drawImage(reader, dx, dy, dw, dh, mask='auto')
+    except Exception:
+        pass
+    return y_bottom
+
+
+# ── Orden de tallas + detección de "adicionales" ─────────────────────────────
+_TALLA_NORMALIZA = {'XXS': '2XS', 'XXL': '2XL', 'XXXL': '3XL', 'UNICA': 'ÚNICA'}
+_TALLA_ORDEN = ['3XS', '2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'ÚNICA']
+# "adicional" = el nombre contiene 'set', 'mecanismo adicional' o 'visor adicional'
+_ADIC_RE = re.compile(r'\bset\b|mecanismo\s+adicional|visor\s+adicional', re.IGNORECASE)
+
+
+def _norm_talla(t):
+    t = str(t or '').upper().strip()
+    return _TALLA_NORMALIZA.get(t, t)
+
+
+def _orden_talla(t):
+    t = _norm_talla(t)
+    return _TALLA_ORDEN.index(t) if t in _TALLA_ORDEN else 90
+
+
+def _es_adicional(nombre):
+    return bool(_ADIC_RE.search(str(nombre or '')))
+
+
+# ── Tabla de tallas/colores ───────────────────────────────────────────────────
+
+def dibujar_tabla_maestra(c, cfg, y_top, filas, x_center=None, max_width=None,
+                          escala=1.0, mostrar_color=False, color_nombre='',
+                          color_hex_str=None, marcar_adicionales=True,
+                          precio_mayor=None, precio_detal=None,
+                          mostrar_precio_mayor=False, mostrar_precio_detal=False,
+                          precios_debajo=True,
+                          etiqueta_talla='TALLA', mostrar_fila_talla=True):
+    """
+    Tabla UNIFICADA talla/código/inventario. Reemplaza cualquier estampado de
+    celdas sueltas: recibe TODAS las variaciones del grupo y las dibuja como
+    una sola tabla coherente.
+
+    filas: lista de dicts {'talla', 'codigo' (o 'sku'), 'inventario', 'nombre'}
+
+    - Ordena las tallas canónicamente (3XS→3XL→ÚNICA) y agrupa duplicados.
+    - Auto-ajusta el ancho de columna para NUNCA desbordar `max_width`.
+    - `escala` < 1.0 encoge toda la tabla (útil en páginas con specs).
+    - Cuando una talla se repite con distinto SKU, la fila cuyo nombre es
+      "adicional" (set / visor adicional / mecanismo adicional) lleva un `*`
+      en la celda de TALLA y se dibuja la leyenda "*Incluye adicionales".
+    - `x_center=None` centra en la página; si se pasa, centra en ese x.
+    - Si `precios_debajo` es True y hay precios, los pinta bajo la tabla.
+
+    Devuelve el y inferior del bloque completo.
+    """
+    from collections import Counter
+
+    if max_width is None:
+        max_width = PAGE_W - 40
+    row_h  = TABLA_ROW_H * escala
+    col_h  = TABLA_COLOR_H * escala
+    fs_lbl = max(6.0, 9 * escala)
+    fs_val = max(6.0, 9 * escala)
+    dy     = row_h * 0.33  # baseline vertical dentro de cada celda
+
+    # Normalizar filas + detectar duplicados de talla + marcar adicionales
+    norm = []
+    for f in filas:
+        norm.append({
+            'talla':  _norm_talla(f.get('talla')),
+            'codigo': str(f.get('codigo') if f.get('codigo') is not None else (f.get('sku') or '-')),
+            'inv':    f.get('inventario', None),
+            'adic':   _es_adicional(f.get('nombre', '')),
+        })
+    cnt = Counter(x['talla'] for x in norm)
+    hay_adic = False
+    for x in norm:
+        x['marca'] = bool(marcar_adicionales and x['adic'] and cnt[x['talla']] > 1)
+        hay_adic = hay_adic or x['marca']
+
+    # Ordenar: talla canónica; dentro de la misma talla, la normal antes que la adicional
+    norm.sort(key=lambda x: (_orden_talla(x['talla']), x['marca'], x['codigo']))
+
+    n = max(len(norm), 1)
+    col_w   = min(64 * escala, max_width / (n + 1))
+    tabla_w = col_w * (n + 1)
+    x0 = ((PAGE_W - tabla_w) / 2) if x_center is None else (x_center - tabla_w / 2)
+    y  = y_top
+
+    prin = _hx(cfg['color_principal'])
+    acen = _hx(cfg['color_acento'])
+
+    # Encabezado de color (opcional)
+    if mostrar_color and color_nombre:
+        y -= col_h
+        c.setFillColor(prin)
+        c.roundRect(x0, y, tabla_w, col_h, 4, fill=1, stroke=0)
+        if color_hex_str:
+            try:
+                c.setFillColor(HexColor(color_hex_str))
+                c.circle(x0 + 12 * escala, y + col_h / 2, 6 * escala, fill=1, stroke=0)
+            except Exception:
+                pass
+        c.setFillColor(white)
+        c.setFont('Helvetica-Bold', fs_lbl)
+        c.drawString(x0 + 24 * escala, y + col_h * 0.3, color_nombre.title())
+
+    def _fila(label, get, hdr_fill, hdr_txt, cell_fill, cell_txt, valfont, marca_col):
+        nonlocal y
+        y -= row_h
+        c.setFillColor(hdr_fill); c.rect(x0, y, col_w, row_h, fill=1, stroke=0)
+        c.setFillColor(hdr_txt);  c.setFont('Helvetica-Bold', fs_lbl)
+        c.drawCentredString(x0 + col_w / 2, y + dy, label)
+        for k, x in enumerate(norm):
+            cx = x0 + col_w * (k + 1)
+            c.setFillColor(cell_fill); c.rect(cx, y, col_w, row_h, fill=1, stroke=0)
+            c.setFillColor(cell_txt);  c.setFont(valfont, fs_val)
+            txt = get(x)
+            if marca_col and x['marca']:
+                txt = txt + '*'
+            c.drawCentredString(cx + col_w / 2, y + dy, txt[:11])
+
+    if mostrar_fila_talla:
+        _fila(etiqueta_talla, lambda x: (_norm_talla(x['talla']) or '-'),
+              prin, white, acen, prin, 'Helvetica-Bold', marca_col=True)
+    _fila('CÓDIGO', lambda x: x['codigo'],
+          HexColor('#F0F0F0'), HexColor('#333333'),
+          HexColor('#F8F8F8'), HexColor('#333333'), 'Helvetica', marca_col=False)
+    _fila('INVENT.', lambda x: (str(x['inv']) if x['inv'] is not None else '-'),
+          HexColor('#F0F0F0'), HexColor('#333333'),
+          HexColor('#F8F8F8'), HexColor('#333333'), 'Helvetica', marca_col=False)
+
+    n_filas = 3 if mostrar_fila_talla else 2
+    total_h = (col_h if (mostrar_color and color_nombre) else 0) + row_h * n_filas
+    y_bottom = y_top - total_h
+    if y_bottom >= 8:
+        c.setStrokeColor(HexColor('#DDDDDD')); c.setLineWidth(0.5)
+        c.rect(x0, y_bottom, tabla_w, total_h, fill=0, stroke=1)
+
+    y_final = y_bottom
+
+    # Leyenda de adicionales (solo aplica si se mostró la fila de talla)
+    if hay_adic and mostrar_fila_talla:
+        y_final -= 10 * escala
+        c.setFillColor(HexColor('#666666'))
+        c.setFont('Helvetica-Oblique', max(6.0, 7.5 * escala))
+        c.drawString(x0, y_final, '*Incluye adicionales')
+
+    # Precios debajo de la tabla (opcional)
+    if precios_debajo:
+        y_final = _draw_precios(
+            c, cfg, x0, y_final - (4 * escala),
+            precio_mayor=precio_mayor, precio_detal=precio_detal,
+            mostrar_mayor=mostrar_precio_mayor, mostrar_detal=mostrar_precio_detal,
+            fs=max(7.0, 10 * escala),
+        )
+
+    return y_final
+
+
+def _draw_precios(c, cfg, x, y_top, precio_mayor=None, precio_detal=None,
+                  mostrar_mayor=False, mostrar_detal=False, fs=9):
+    """Dibuja 1-2 líneas de precio (DETAL / MAYOR) alineadas a `x`, empezando
+    justo debajo de `y_top`. Devuelve el y inferior. Formato colombiano."""
+    lineas = []
+    if mostrar_detal and precio_detal:
+        p = _formatear_precio(precio_detal)
+        if p:
+            lineas.append(f'PRECIO DETAL: {p}')
+    if mostrar_mayor and precio_mayor:
+        p = _formatear_precio(precio_mayor)
+        if p:
+            lineas.append(f'PRECIO MAYOR: {p}')
+    if not lineas:
+        return y_top
+    c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), fs)
+    c.setFillColor(HexColor(cfg.get('color_precio', '#444444')))
+    y = y_top
+    for linea in lineas:
+        y -= fs + 3
+        c.drawString(x, y, linea)
+    return y
+
+
+def _draw_tabla(c, cfg, y_top, tallas_data, color_nombre='', color_hex_str=None,
+                precio_mayor=None, precio_detal=None,
+                mostrar_precio_mayor=False, mostrar_precio_detal=False):
+    """Wrapper compatible con el path dinámico (una tabla por color).
+    tallas_data: lista de (talla, codigo, inventario)."""
+    filas = [{'talla': t, 'codigo': cod, 'inventario': inv, 'nombre': ''}
+             for (t, cod, inv) in tallas_data]
+    return dibujar_tabla_maestra(
+        c, cfg, y_top, filas,
+        mostrar_color=bool(color_nombre),
+        color_nombre=color_nombre, color_hex_str=color_hex_str,
+        marcar_adicionales=False,  # el path dinámico ya separa por color
+        precio_mayor=precio_mayor, precio_detal=precio_detal,
+        mostrar_precio_mayor=mostrar_precio_mayor,
+        mostrar_precio_detal=mostrar_precio_detal,
+        precios_debajo=True,
+    )
+
+
+def _formatear_precio(valor):
+    """$130.000 — formato colombiano, sin decimales. None/valores raros -> None."""
+    if valor is None:
+        return None
+    try:
+        n = int(round(float(valor)))
+    except (TypeError, ValueError):
+        return None
+    return '$' + f'{n:,}'.replace(',', '.')
+
+
+# ── Número de página ──────────────────────────────────────────────────────────
+
+def _draw_numero_pagina(c, num, total):
+    c.setFillColor(HexColor('#AAAAAA'))
+    c.setFont('Helvetica', 9)
+    c.drawCentredString(PAGE_W / 2, 14, f"{num} / {total}")
+
+
+# ── Full bleed ────────────────────────────────────────────────────────────────
+
+def _draw_full_bleed(c, img_path_o_reader, texto_overlay=None, cfg=None,
+                     fecha_actualizacion=None):
+    """Acepta ImageReader pre-cargado (rápido) o None (fallback color sólido).
+    NUNCA intenta abrir un archivo PNG directamente — eso cuelga ReportLab en Vercel.
+    `fecha_actualizacion`: texto opcional (dd/mm/aaaa) que se pinta muy pequeño
+    debajo del período en la portada."""
+    dibujado = False
+    if isinstance(img_path_o_reader, ImageReader):
+        try:
+            c.drawImage(img_path_o_reader, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
+            dibujado = True
+        except Exception:
+            pass
+
+    if not dibujado:
+        # Fallback: fondo negro sólido (nunca se cuelga)
+        c.setFillColor(HexColor('#111111'))
+        c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+
+    if texto_overlay and cfg:
+        partes      = texto_overlay.split('|')
+        cat_txt     = partes[0].strip() if len(partes) == 2 else ''
+        periodo_txt = partes[1].strip() if len(partes) == 2 else texto_overlay.strip()
+        marca       = cfg.get('_marca', 'xtrong')
+
+        if marca == 'xtrong':
+            # Solo período, en negro, en el área blanca debajo del logo (esquina superior derecha)
+            # Se corre un poco a la izquierda (x_right menor) respecto a la versión anterior.
+            x_right = PAGE_W - 58
+            if periodo_txt:
+                y_periodo = PAGE_H * 0.815 + 85
+                c.setFillColor(HexColor('#000000'))
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
+                c.drawRightString(x_right, y_periodo, periodo_txt)
+            # Fecha de última actualización de inventario, muy pequeña, justo debajo
+            if fecha_actualizacion:
+                c.setFillColor(HexColor('#333333'))
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 6.5)
+                y_fecha = (PAGE_H * 0.815 + 85) - 12 if periodo_txt else (PAGE_H * 0.815 + 73)
+                c.drawRightString(
+                    x_right, y_fecha,
+                    f'Última actualización de inventario: {fecha_actualizacion}')
+        else:
+            # Comportamiento original para xecuro y otras marcas
+            y_base  = PAGE_H * 0.78
+            x_right = PAGE_W - 14
+            c.setFillColor(_hx(cfg['color_acento']))
+            if cat_txt:
+                c.setFont(cfg.get('font_titulo', 'Helvetica-Bold'), 13)
+                c.drawRightString(x_right, y_base, cat_txt)
+                y_base -= 17
+            if periodo_txt:
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 11)
+                c.drawRightString(x_right, y_base, periodo_txt)
+                y_base -= 12
+            # Fecha de última actualización de inventario (clara, para verse sobre
+            # el fondo oscuro de la portada XECURO)
+            if fecha_actualizacion:
+                c.setFillColor(HexColor('#DDDDDD'))
+                c.setFont(cfg.get('font_cuerpo', 'Helvetica'), 6.5)
+                c.drawRightString(
+                    x_right, y_base,
+                    f'Última actualización de inventario: {fecha_actualizacion}')
+
+
+# ── Página de producto ────────────────────────────────────────────────────────
+
+def _es_pro(producto):
+    """Detecta si un producto es de línea PRO por nombre o descripción."""
+    texto = (producto.get('nombre','') + ' ' +
+             producto.get('desc_corta','') + ' ' +
+             producto.get('descripcion','')).lower()
+    return bool(re.search(r'xecuro[\s\-]?pro', texto))
+
+
+def _pagina_producto(c, cfg, producto, img_path, mostrar_precios, num, total,
+                     carpeta_assets, assets_tipo=None, bg_reader=None, bg_pro_reader=None,
+                     precio_mayor=None, precio_detal=None,
+                     mostrar_precio_mayor=False, mostrar_precio_detal=False):
+    # Fondo: imagen de plantilla para Xecuro, blanco para Xtrong
+    # Usar reader pre-cargado si está disponible (evita releer disco en cada página)
+    reader_a_usar = None
+    pagina_bg = None
+    if assets_tipo:
+        if _es_pro(producto) and assets_tipo.get('pagina_bg_pro'):
+            reader_a_usar = bg_pro_reader
+            pagina_bg = os.path.join(carpeta_assets, assets_tipo['pagina_bg_pro'])
+        elif assets_tipo.get('pagina_bg'):
+            reader_a_usar = bg_reader
+            pagina_bg = os.path.join(carpeta_assets, assets_tipo['pagina_bg'])
+
+    if reader_a_usar:
+        try:
+            c.drawImage(reader_a_usar, 0, 0, PAGE_W, PAGE_H, preserveAspectRatio=False)
+        except Exception:
+            c.setFillColor(white)
+            c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+    else:
+        # Fallback: fondo blanco — nunca intentar abrir PNG directamente (cuelga en Vercel)
+        c.setFillColor(white)
+        c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+
+    logo_path = cfg.get('_logo_path')
+    # membrete eliminado — la plantilla de fondo ya incluye diseño de marca
+
+    # Certificación DOT/ECE
+    desc_txt = producto.get('desc_corta', '') + ' ' + producto.get('descripcion', '')
+    tiene_dot = 'DOT' in desc_txt.upper()
+    tiene_ece = 'ECE' in desc_txt.upper()
+    _draw_cert(c, cfg, tiene_dot, tiene_ece, carpeta_assets)
+
+    # Nombre + descripción
+    desc_corta = producto.get('desc_corta', '') or producto.get('descripcion', '') or ''
+    y_nombre_bottom = _draw_nombre_zona(
+        c, cfg, producto['nombre'],
+        descripcion_corta=desc_corta,
+        precio=precio_detal or precio_mayor,
+        mostrar_precio=mostrar_precios,
+    )
+
+    # Precio debajo del nombre, un poco más abajo (punto 1: en páginas dinámicas
+    # el precio subía demasiado). PRECIO_DYN_OFFSET_Y lo baja sin tocar el nombre.
+    if mostrar_precios:
+        _draw_precios(
+            c, cfg, 16, y_nombre_bottom - PRECIO_DYN_OFFSET_Y,
+            precio_mayor=precio_mayor, precio_detal=precio_detal,
+            mostrar_mayor=mostrar_precio_mayor, mostrar_detal=mostrar_precio_detal,
+            fs=9,
+        )
+
+    # Imagen
+    y_img_top = y_nombre_bottom - 166
+    TABLE_TOP = (TABLA_COLOR_H + TABLA_ROW_H * 3) + 40
+    avail = y_img_top - TABLE_TOP - 8
+    img_h = max(60, avail * 0.72)  # reducido de 0.88 a 0.72
+    # Centrar con más margen lateral
+    img_x = 40
+    img_w = PAGE_W - 80
+    _draw_imagen(c, img_path, img_x, y_img_top, img_w, img_h)
+
+    # Tabla por color
+    from collections import OrderedDict
+    variaciones = producto.get('variaciones', [])
+    grupos_color = OrderedDict()
+    for v in variaciones:
+        color = v.get('color', '') or 'default'
+        if color not in grupos_color:
+            grupos_color[color] = []
+        grupos_color[color].append(v)
+
+    y_cur = TABLE_TOP
+    for idx_color, (color, vars_color) in enumerate(grupos_color.items()):
+        tallas_data = []
+        for v in vars_color:
+            talla = v.get('talla', '') or ''
+            if not talla:
+                # Intentar extraer talla del nombre del producto o descripción
+                import re as _re
+                texto_buscar = (v.get('nombre', '') + ' ' +
+                               producto.get('desc_corta', '')).upper()
+                # Buscar patrones de talla: XS, S, M, L, XL, 2XL, 3XL
+                m = _re.search(r'\b(3XL|2XL|XXL|XL|XS|[SML])\b', texto_buscar)
+                if m:
+                    talla = m.group(1)
+                else:
+                    talla = 'ÚNICA'
+            tallas_data.append((talla, v.get('sku', '') or '-', v.get('inventario', None)))
+        color_label   = color if color != 'default' else ''
+        color_hex_str = color_hex(color) if color not in ('default', '') else None
+        y_cur = _draw_tabla(
+            c, cfg, y_cur, tallas_data,
+            color_nombre=color_label,
+            color_hex_str=color_hex_str,
+            precio_mayor=None,
+            precio_detal=None,
+            mostrar_precio_mayor=False,
+            mostrar_precio_detal=False,
+        )
+        y_cur -= 10
+
+    _draw_numero_pagina(c, num, total)
+
+
+# ── Función principal ─────────────────────────────────────────────────────────
+
+def generar_pdf_desde_productos(
+    productos,
+    ruta_salida,
+    marca='xtrong',
+    titulo='',
+    tipo_catalogo='',
+    periodo='',
+    mostrar_precios=True,
+    carpeta_assets='',
+    carpeta_cache='',
+    callback_log=None,
+    callback_progreso=None,
+):
+    def log(m):
+        if callback_log: callback_log(m)
+    def prog(p):
+        if callback_progreso: callback_progreso(p)
+
+    cfg = dict(MARCAS_CONFIG.get(marca, MARCAS_CONFIG['xtrong']))
+    cfg['_marca'] = marca
+
+    # Resolver carpeta de assets — buscar en múltiples rutas posibles
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    marca_upper = marca.upper()  # XTRONG / XECURO
+    carpeta_assets_candidatos = [
+        os.path.join(base_dir, 'assets', marca),         # assets/xtrong
+        os.path.join(base_dir, 'assets', marca_upper),   # assets/XTRONG
+        os.path.join(base_dir, '..', 'assets', marca),
+        os.path.join(base_dir, '..', 'assets', marca_upper),
+        os.path.join('/var/task', 'assets', marca),
+        os.path.join('/var/task', 'assets', marca_upper),
+    ]
+    # carpeta_assets se sobreescribe abajo desde app_web, pero si llega vacía usamos detección
+    _carpeta_assets_detectada = carpeta_assets
+    if not os.path.isdir(_carpeta_assets_detectada):
+        for c in carpeta_assets_candidatos:
+            if os.path.isdir(c):
+                _carpeta_assets_detectada = c
+                break
+    carpeta_assets = _carpeta_assets_detectada
+    log(f"  📁 Assets dir: {carpeta_assets}")
+    log(f"  📁 Assets existe: {os.path.isdir(carpeta_assets)}")
+    if os.path.isdir(carpeta_assets):
+        log(f"  📁 Archivos: {os.listdir(carpeta_assets)[:5]}")
+
+    # Registrar fuentes TTF
+    for font_name, font_file in [('Kanit', 'Kanit-Bold.ttf'), ('Sora', 'Sora-Regular.ttf')]:
+        fp = os.path.join(carpeta_assets, font_file)
+        if os.path.exists(fp):
+            try:
+                pdfmetrics.registerFont(TTFont(font_name, fp))
+                if marca == 'xtrong' and font_name == 'Kanit':
+                    cfg['font_titulo'] = 'Kanit'
+                elif marca == 'xecuro' and font_name == 'Sora':
+                    cfg['font_titulo'] = 'Sora'
+                log(f"  ✅ Fuente {font_name} cargada")
+            except Exception as e:
+                log(f"  ⚠️ Fuente {font_name}: {e}")
+
+    # Logo
+    logo_path = None
+    for fname in ('logo.png', 'logo_xtrong.png', 'logo_xecuro.png', 'LOGO.png'):
+        candidate = os.path.join(carpeta_assets, fname)
+        if os.path.exists(candidate):
+            logo_path = candidate
+            break
+    cfg['_logo_path'] = logo_path
+
+    # Portada y contraportada según tipo
+    assets_tipo_dict = ASSETS_POR_TIPO.get(tipo_catalogo, {})
+    portada_fname  = assets_tipo_dict.get('portada', 'PORTADA.jpg')
+    contra_fname   = assets_tipo_dict.get('contraportada', 'CONTRAPORTADA.jpg')
+
+    def _buscar_asset_local(fname):
+        return _buscar_asset(carpeta_assets, fname)
+
+    def _cargar_reader_local(path, nombre):
+        return _cargar_image_reader_seguro(path, nombre, log=log)
+
+    portada_path = _buscar_asset_local(portada_fname)
+    contra_path  = _buscar_asset_local(contra_fname)
+
+    portada_reader = _cargar_reader_local(portada_path, "Portada")
+    contra_reader  = _cargar_reader_local(contra_path,  "Contraportada")
+
+    # Pre-cargar fondos de página en memoria (se reusan en cada producto)
+    bg_fname     = assets_tipo_dict.get('pagina_bg')
+    bg_pro_fname = assets_tipo_dict.get('pagina_bg_pro')
+    bg_reader     = None
+    bg_pro_reader = None
+    if bg_fname:
+        bg_path   = _buscar_asset_local(bg_fname)
+        log(f"  🔍 Fondo página resuelto a: {bg_path} (existe: {os.path.exists(bg_path)})")
+        bg_reader = _cargar_reader_local(bg_path, f"Fondo página ({bg_fname})")
+    if bg_pro_fname:
+        bg_pro_path   = _buscar_asset_local(bg_pro_fname)
+        bg_pro_reader = _cargar_reader_local(bg_pro_path, f"Fondo PRO ({bg_pro_fname})")
+
+    assets_tipo = assets_tipo_dict
+    log(f"  📄 Portada: {portada_fname}")
+    log(f"  📄 Contraportada: {contra_fname}")
+
+    # Resolver imágenes — paralelo con hasta 8 workers
+    log("🖼️ Descargando imágenes en paralelo...")
+    total = len(productos)
+
+    # Primero construir el mapa de tareas: {i: [(ck, url), ...]}
+    tareas = {}
+    for i, prod in enumerate(productos):
+        variaciones = prod.get('variaciones', [])
+        sku_key = prod.get('sku', '') or f'prod_{i}'
+        skus_por_color = {}
+        for vi, v in enumerate(variaciones):
+            color = v.get('color', 'default') or 'default'
+            url   = v.get('imagenes', '')
+            vsku  = v.get('sku', '') or f'{sku_key}_v{vi}'
+            if color not in skus_por_color:
+                skus_por_color[color] = (vsku, url)
+            elif _es_foto_frontal(skus_por_color[color][1]) and not _es_foto_frontal(url):
+                skus_por_color[color] = (vsku, url)
+        if not skus_por_color:
+            skus_por_color['default'] = (sku_key, prod.get('imagenes', ''))
+        tareas[i] = list(skus_por_color.items())[:2]  # máx 2 colores por producto
+
+    # Función que resuelve UNA imagen (caché o descarga)
+    def _resolver(i, j, color, vsku, url):
+        ck = vsku if j == 0 else f'{vsku}_c{j}'
+        cache_jpg = os.path.join(carpeta_cache, f'{ck}.jpg')
+        if os.path.exists(cache_jpg) and os.path.getsize(cache_jpg) > 1000:
+            return (i, j, cache_jpg)
+        if url:
+            path = descargar_imagen(url, ck, productos[i].get('nombre', ''),
+                                    carpeta_cache, callback_log=log)
+            return (i, j, path)
+        return (i, j, None)
+
+    # Lanzar todas en paralelo
+    imagenes_paths = {i: [None] for i in range(total)}
+    futures = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for i, items in tareas.items():
+            for j, (color, (vsku, url)) in enumerate(items):
+                futures.append(executor.submit(_resolver, i, j, color, vsku, url))
+        for fut in as_completed(futures):
+            try:
+                i, j, path = fut.result()
+                if j == 0:
+                    imagenes_paths[i] = [path]
+                else:
+                    imagenes_paths[i].append(path)
+            except Exception:
+                pass
+
+    log(f"🖼️ Imágenes resueltas: {sum(1 for v in imagenes_paths.values() if v[0])} / {total}")
+
+    log("📄 Generando páginas PDF...")
+    prog(42)
+
+    c = canvas.Canvas(ruta_salida, pagesize=(PAGE_W, PAGE_H))
+
+    # Portada
+    log("  📄 Portada...")
+    overlay_portada = None
+    if tipo_catalogo or periodo:
+        partes_overlay = []
+        if tipo_catalogo:
+            partes_overlay.append(tipo_catalogo.upper())
+        if periodo:
+            partes_overlay.append(periodo)
+        overlay_portada = '|'.join(partes_overlay)
+    _draw_full_bleed(c, portada_reader or portada_path, texto_overlay=overlay_portada, cfg=cfg)
+    c.showPage()
+    prog(44)
+
+    # Páginas de productos
+    for i, prod in enumerate(productos):
+        prog(44 + int(53 * i / max(total, 1)))
+        img_list = imagenes_paths.get(i, [None])
+        img_path = img_list[0] if img_list else None
+        log(f"  📝 [{i+1}/{total}] {prod['nombre'][:45]}")
+        _pagina_producto(c, cfg, prod, img_path, mostrar_precios,
+                         i + 1, total, carpeta_assets, assets_tipo=assets_tipo,
+                         bg_reader=bg_reader, bg_pro_reader=bg_pro_reader)
+        c.showPage()
+
+    # Contraportada
+    log("  📄 Contraportada...")
+    _draw_full_bleed(c, contra_reader or contra_path)
+    c.showPage()
+
+    log("💾 Guardando PDF...")
+    c.save()
+    prog(100)
+    return ruta_salida

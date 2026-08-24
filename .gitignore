@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+
+# Credenciales — usar variables de entorno de Railway en su lugar
+# (XTRONG_CK, XTRONG_CS, XECURO_CK, XECURO_CS, ver leer_claves.py / app_web.py)
+API_key.txt
+API key.txt
+
+# Duplicados "optimizados" que optimizar_assets.py genera junto a cada
+# imagen de assets/ pero que el código de generación NO usa
+# (_buscar_asset() en generador_web.py nunca resuelve el sufijo _opt) —
+# son peso muerto en el repo.
+*_opt.jpg
+*_opt.jpeg
+
+# Caché de imágenes descargadas / temporales
+cache_imagenes/
+/tmp/
+
+# Config local del generador de escritorio (app.py)
+config.json
