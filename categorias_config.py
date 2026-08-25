@@ -92,11 +92,15 @@ def normalizar_marca(valor_crudo):
     Devuelve 'xtrong', 'xecuro', o None (marca ambigua / vacía).
     Trata 'XECURO PRO' / 'XECURO-PRO' como xecuro y 'XTRONG GP' como xtrong:
     son líneas de la marca base, no marcas distintas.
+
+    XTRONG se detecta por CONTENER 'xtrong' en cualquier parte del texto
+    (no solo al inicio), para no perder variantes con prefijos/sufijos
+    distintos en la columna MARCA del Excel.
     """
     if not valor_crudo:
         return None
     limpio = str(valor_crudo).strip().lower()
-    if limpio.startswith('xtrong'):
+    if 'xtrong' in limpio:
         return 'xtrong'
     if limpio.startswith('xecuro'):
         return 'xecuro'
