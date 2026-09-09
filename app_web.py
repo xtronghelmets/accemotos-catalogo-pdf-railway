@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import threading
 import uuid
@@ -250,8 +251,17 @@ def _ejecutar_generacion(job_id, catalogo_id, data, referencia=None):
         carpeta_cache = f'/tmp/cache_imagenes/{marca_key}'
         os.makedirs(carpeta_cache, exist_ok=True)
 
-        ahora        = datetime.now()
-        titulo_slug  = (referencia if referencia else cfg_catalogo['nombre']).replace(' — ', '_').replace(' ', '_')
+        ahora = datetime.now()
+
+        # Nombre del PDF: la marca siempre va primero (ej. "XTRONG_Cascos_cerrados_...",
+        # "XECURO_XR-217_..."). Si el nombre del catálogo ya trae la marca al inicio
+        # (caso 'XECURO — Catálogo general'), no se duplica.
+        nombre_marca_pdf = MARCAS[marca_key]['nombre']
+        base_nombre = referencia if referencia else cfg_catalogo['nombre']
+        base_nombre = re.sub(
+            rf'^{re.escape(nombre_marca_pdf)}\s*—\s*', '', base_nombre, flags=re.IGNORECASE
+        ).strip()
+        titulo_slug  = f"{nombre_marca_pdf}_{base_nombre}".replace(' — ', '_').replace(' ', '_')
         periodo_slug = periodo.replace(' ', '_').replace('/', '-') if periodo else ''
         fecha_slug   = ahora.strftime('%Y%m%d-%H%M')
         nombre_pdf   = f"{titulo_slug}_{periodo_slug}_{fecha_slug}.pdf"
