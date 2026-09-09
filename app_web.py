@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, request, send_file
 
 from categorias_config import CATALOGOS
-from lector_maestro import cargar_grupos_activos
+from lector_maestro import cargar_grupos_activos, referencia_de_grupo
 
 app = Flask(
     __name__,
@@ -105,12 +105,60 @@ def catalogos():
     })
 
 
+@app.route('/api/referencias')
+def referencias():
+    """Lista, para una marca dada, las referencias (modelos) disponibles con
+    inventario activo, excluyendo los catálogos de Repuestos. El front usa
+    esto para armar el desplegable de generación 'por referencia'.
+
+    Cada referencia se identifica por el código de modelo detectado en el
+    Nombre_catalogo (lector_maestro.referencia_de_grupo), y trae asociado el
+    catalogo_id al que pertenece (necesario para /api/generar).
+
+    Para XECURO, el label antepone el tipo de producto (subcategoría, columna
+    J) al código de referencia, ej. 'Casco XR-217', 'Impermeable XR-218'."""
+    marca = request.args.get('marca', '')
+    if marca not in MARCAS:
+        return jsonify({'error': f"marca no válida: '{marca}'"}), 400
+
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        datos = cargar_grupos_activos(base_dir)
+    except Exception as e:
+        return jsonify({'referencias': [], 'error': str(e)})
+
+    vistos = {}
+    for g in datos['grupos'].values():
+        if g.get('marca') != marca:
+            continue
+        cid = g.get('catalogo')
+        if cid not in CATALOGOS or cid.endswith('_repuestos'):
+            continue
+
+        ref = referencia_de_grupo(g)
+        if not ref or ref in vistos:
+            continue
+
+        label = ref
+        if marca == 'xecuro':
+            tipo = (g.get('subcategoria') or '').strip()
+            if tipo:
+                label = f"{tipo.capitalize()} {ref}"
+
+        vistos[ref] = {'value': ref, 'label': label, 'catalogo_id': cid}
+
+    lista = sorted(vistos.values(), key=lambda r: r['label'])
+    return jsonify({'referencias': lista})
+
+
 @app.route('/api/generar', methods=['POST'])
 def generar():
     data = request.json or {}
     catalogo_id = data.get('catalogo_id', '')
     if catalogo_id not in CATALOGOS:
         return jsonify({'error': f"catalogo_id no válido: '{catalogo_id}'"}), 400
+
+    referencia = (data.get('referencia') or '').strip() or None
 
     job_id = str(uuid.uuid4())[:8]
     _write_job(job_id, {
@@ -123,6 +171,7 @@ def generar():
     hilo = threading.Thread(
         target=_ejecutar_generacion,
         args=(job_id, catalogo_id, data),
+        kwargs={'referencia': referencia},
         daemon=True,
     )
     hilo.start()
@@ -162,7 +211,7 @@ def descargar(job_id):
 
 # ── Worker de generación ──────────────────────────────────────────────────
 
-def _ejecutar_generacion(job_id, catalogo_id, data):
+def _ejecutar_generacion(job_id, catalogo_id, data, referencia=None):
     logs_acum = []
 
     def log(msg):
@@ -202,7 +251,7 @@ def _ejecutar_generacion(job_id, catalogo_id, data):
         os.makedirs(carpeta_cache, exist_ok=True)
 
         ahora        = datetime.now()
-        titulo_slug  = cfg_catalogo['nombre'].replace(' — ', '_').replace(' ', '_')
+        titulo_slug  = (referencia if referencia else cfg_catalogo['nombre']).replace(' — ', '_').replace(' ', '_')
         periodo_slug = periodo.replace(' ', '_').replace('/', '-') if periodo else ''
         fecha_slug   = ahora.strftime('%Y%m%d-%H%M')
         nombre_pdf   = f"{titulo_slug}_{periodo_slug}_{fecha_slug}.pdf"
@@ -221,6 +270,7 @@ def _ejecutar_generacion(job_id, catalogo_id, data):
                 'xtrong': MARCAS['xtrong'],
                 'xecuro': MARCAS['xecuro'],
             },
+            referencia_filtro=referencia,
             callback_log=log,
             callback_progreso=progreso,
         )

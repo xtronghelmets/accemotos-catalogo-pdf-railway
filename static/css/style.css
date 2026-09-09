@@ -330,3 +330,40 @@ body {
 .cat-tipo-nombre { font-size: 14px; font-weight: 600; color: var(--text); }
 .cat-tipo-desc   { font-size: 12px; color: var(--text-hint); }
 .cat-tipo-msg    { font-size: 12px; color: #c53030; margin-top: 2px; }
+
+/* ── MODO DE GENERACIÓN (tipo de catálogo vs. referencia) ── */
+.modo-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.modo-btn {
+  padding: 11px 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.modo-btn.selected {
+  border-color: var(--marca-color);
+  background: color-mix(in srgb, var(--marca-color) 8%, white);
+  color: var(--marca-color);
+}
+
+/* ── SELECT DE REFERENCIA ── */
+select.field-input {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  padding-right: 32px;
+  cursor: pointer;
+}

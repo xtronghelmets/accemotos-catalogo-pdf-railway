@@ -16,6 +16,15 @@ let tipoActual   = null;
 let jobActual    = null;
 let pollInterval = null;
 
+// Modo de generación: 'tipo' (por tipo de catálogo) o 'referencia' (por SKU/modelo).
+let modoActual = 'tipo';
+let referenciaActual = null;
+
+// Se llena bajo demanda con GET /api/referencias?marca=...:
+// { xtrong: [{value, label, catalogo_id}, ...] | null, xecuro: [...] | null }
+// null = todavía no se cargó para esa marca.
+let REFERENCIAS_POR_MARCA = { xtrong: null, xecuro: null };
+
 // ── Init ──────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -23,6 +32,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     r.addEventListener('change', e => seleccionarMarca(e.target.value));
   });
   document.getElementById('btn-gen').addEventListener('click', iniciarGeneracion);
+  document.getElementById('select-referencia').addEventListener('change', e => {
+    referenciaActual = e.target.value || null;
+  });
 
   // Checkboxes de precio — ambos independientes, ambos desmarcados por defecto
   ['mayor', 'detal'].forEach(tipo => {
@@ -76,6 +88,8 @@ function seleccionarMarca(marca) {
 
   actualizarTheme();
   renderTipos();
+
+  if (modoActual === 'referencia') cargarReferencias(marcaActual);
 }
 
 function actualizarTheme() {
@@ -135,14 +149,77 @@ function seleccionarTipo(key) {
   renderTipos();
 }
 
+// ── Modo de generación (tipo de catálogo vs. referencia) ────────────────────
+
+function seleccionarModo(modo) {
+  modoActual = modo;
+
+  document.getElementById('modo-tipo').classList.toggle('selected', modo === 'tipo');
+  document.getElementById('modo-referencia').classList.toggle('selected', modo === 'referencia');
+  document.getElementById('card-cats').style.display       = modo === 'tipo' ? '' : 'none';
+  document.getElementById('card-referencia').style.display = modo === 'referencia' ? '' : 'none';
+
+  if (modo === 'referencia') cargarReferencias(marcaActual);
+}
+
+async function cargarReferencias(marca) {
+  if (REFERENCIAS_POR_MARCA[marca] === null) {
+    const select = document.getElementById('select-referencia');
+    select.innerHTML = '<option value="">Cargando...</option>';
+    try {
+      const r = await fetch(`/api/referencias?marca=${marca}`);
+      const d = await r.json();
+      REFERENCIAS_POR_MARCA[marca] = d.referencias || [];
+    } catch (e) {
+      REFERENCIAS_POR_MARCA[marca] = [];
+    }
+  }
+  // Puede haber cambiado la marca mientras cargaba: renderizar solo si sigue vigente.
+  if (marca === marcaActual) renderReferencias();
+}
+
+function renderReferencias() {
+  const select = document.getElementById('select-referencia');
+  const vacio  = document.getElementById('referencia-vacio');
+  const lista  = REFERENCIAS_POR_MARCA[marcaActual] || [];
+
+  referenciaActual = null;
+
+  if (lista.length === 0) {
+    select.innerHTML = '<option value="">— sin referencias disponibles —</option>';
+    vacio.style.display = 'block';
+    return;
+  }
+
+  vacio.style.display = 'none';
+  select.innerHTML = '<option value="">Selecciona una referencia...</option>' +
+    lista.map(r =>
+      `<option value="${r.value}" data-catalogo-id="${r.catalogo_id}">${r.label}</option>`
+    ).join('');
+}
+
 // ── Generación ────────────────────────────────────────────────────────────
 
 async function iniciarGeneracion() {
   const periodo = document.getElementById('periodo').value.trim();
 
-  if (!tipoActual) {
-    alert('Selecciona un tipo de catálogo.');
-    return;
+  let catalogoId  = null;
+  let referencia  = null;
+
+  if (modoActual === 'referencia') {
+    const select = document.getElementById('select-referencia');
+    if (!select.value) {
+      alert('Selecciona una referencia.');
+      return;
+    }
+    referencia = select.value;
+    catalogoId = select.selectedOptions[0].dataset.catalogoId;
+  } else {
+    if (!tipoActual) {
+      alert('Selecciona un tipo de catálogo.');
+      return;
+    }
+    catalogoId = tipoActual;
   }
 
   const btn = document.getElementById('btn-gen');
@@ -154,11 +231,12 @@ async function iniciarGeneracion() {
   setNavStatus('busy', 'Generando...');
 
   const payload = {
-    catalogo_id:   tipoActual,
+    catalogo_id:   catalogoId,
     periodo:       periodo,
     precio_mayor:  document.getElementById('chk-precio-mayor').checked,
     precio_detal:  document.getElementById('chk-precio-detal').checked,
   };
+  if (referencia) payload.referencia = referencia;
 
   try {
     const r = await fetch('/api/generar', {

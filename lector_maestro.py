@@ -263,6 +263,13 @@ def _referencia_para_agrupar(grupo):
     return _re.sub(r'\s+', ' ', nombre).strip().upper()
 
 
+def referencia_de_grupo(grupo):
+    """Versión pública de _referencia_para_agrupar(), para uso fuera de este
+    módulo (p.ej. app_web.py y orquestador.py al filtrar/listar por
+    referencia)."""
+    return _referencia_para_agrupar(grupo)
+
+
 def armar_catalogo(catalogo_id, grupos_activos, callback_log=None):
     """
     Devuelve una lista ordenada de secciones para un catálogo específico:

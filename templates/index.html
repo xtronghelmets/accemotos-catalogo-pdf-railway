@@ -141,11 +141,35 @@
       </div>
     </section>
 
+    <!-- MODO DE GENERACIÓN -->
+    <section class="card">
+      <div class="sec-label">¿Cómo quieres generar el catálogo?</div>
+      <div class="modo-row">
+        <button type="button" class="modo-btn selected" id="modo-tipo" onclick="seleccionarModo('tipo')">
+          Por tipo de catálogo
+        </button>
+        <button type="button" class="modo-btn" id="modo-referencia" onclick="seleccionarModo('referencia')">
+          Por referencia
+        </button>
+      </div>
+    </section>
+
     <!-- TIPO DE CATÁLOGO -->
     <section class="card" id="card-cats">
       <div class="sec-label">Tipo de catálogo</div>
       <div class="cat-tipo-list" id="cat-tipo-list">
         <!-- generado por JS según marca -->
+      </div>
+    </section>
+
+    <!-- REFERENCIA -->
+    <section class="card" id="card-referencia" style="display:none;">
+      <div class="sec-label">Referencia</div>
+      <select class="field-input" id="select-referencia">
+        <option value="">Cargando...</option>
+      </select>
+      <div class="cat-tipo-msg" id="referencia-vacio" style="display:none;">
+        No hay referencias disponibles para esta marca.
       </div>
     </section>
 

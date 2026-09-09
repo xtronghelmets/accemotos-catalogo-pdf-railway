@@ -24,7 +24,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 import generador_web as gw
 from categorias_config import CATALOGOS
-from lector_maestro import cargar_grupos_activos, armar_catalogo
+from lector_maestro import cargar_grupos_activos, armar_catalogo, referencia_de_grupo
 from paginas_prehechas import construir_indice, tiene_pagina_prehecha, dibujar_pagina_prehecha
 import paginas_sku
 from fuentes_marca import registrar_fuentes_marca
@@ -127,6 +127,7 @@ def generar_catalogo(
     carpeta_cache=None,
     marcas_woo=None,   # {'xtrong': {'url','ck','cs'}, 'xecuro': {...}}
     dinamico_si_falta=False,  # True: si falta la página, descarga la foto (col K)
+    referencia_filtro=None,  # Si se pasa, solo incluye grupos de esa referencia/modelo
     callback_log=None,
     callback_progreso=None,
 ):
@@ -174,10 +175,22 @@ def generar_catalogo(
     prog(5)
 
     buckets = armar_catalogo(catalogo_id, datos['grupos'], callback_log=log)
+
+    if referencia_filtro:
+        ref_norm = str(referencia_filtro).strip().upper()
+        buckets = [
+            (k, lbl, [g for g in gs if referencia_de_grupo(g) == ref_norm])
+            for (k, lbl, gs) in buckets
+        ]
+        buckets = [(k, lbl, gs) for (k, lbl, gs) in buckets if gs]
+        log(f"  🔎 Filtrando por referencia '{ref_norm}'")
+
     total_grupos = sum(len(gs) for _, _, gs in buckets)
     if total_grupos == 0:
+        motivo = (f"la referencia '{referencia_filtro}'" if referencia_filtro
+                  else f"'{cfg_catalogo['nombre']}'")
         raise ValueError(
-            f"No hay grupos activos con inventario para '{cfg_catalogo['nombre']}'. "
+            f"No hay grupos activos con inventario para {motivo}. "
             "Verifica el Excel (data/data.xlsx)."
         )
     log(f"  ✅ {total_grupos} productos a incluir")
@@ -287,7 +300,8 @@ def generar_catalogo(
     except Exception as _e:
         log(f"  ⚠️ No se pudo leer la fecha del Excel: {_e}")
 
-    overlay = f"{cfg_catalogo['nombre'].upper()}|{periodo}" if periodo else cfg_catalogo['nombre'].upper()
+    titulo_portada = referencia_filtro.upper() if referencia_filtro else cfg_catalogo['nombre'].upper()
+    overlay = f"{titulo_portada}|{periodo}" if periodo else titulo_portada
     gw._draw_full_bleed(c, portada_reader or portada_path, texto_overlay=overlay, cfg=cfg,
                         fecha_actualizacion=fecha_excel)
     c.showPage()
